@@ -1,0 +1,545 @@
+import React, { useState, useEffect } from "react";
+import { motion } from "motion/react";
+import {
+  ArrowLeft,
+  Calendar,
+  Clock,
+  Sparkles,
+  FileText,
+  CheckCircle,
+  Mail,
+  Copy,
+  Check,
+  Download,
+  Share2,
+  Bookmark,
+  User as UserIcon,
+} from "lucide-react";
+import { Meeting, SpeakerTurn, ActionItem, Email } from "../types";
+
+interface MeetingDetailViewProps {
+  meetingId: string;
+  token: string;
+  onBack: () => void;
+  onUpdateStats: () => void;
+}
+
+export default function MeetingDetailView({
+  meetingId,
+  token,
+  onBack,
+  onUpdateStats,
+}: MeetingDetailViewProps) {
+  const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [actionItems, setActionItems] = useState<ActionItem[]>([]);
+  const [email, setEmail] = useState<Email | null>(null);
+  const [activeTab, setActiveTab] = useState<"transcript" | "summary" | "actions" | "email">("summary");
+  
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [copiedSubject, setCopiedSubject] = useState(false);
+
+  // Parse speaker turns safely
+  const getSpeakerTurns = (): SpeakerTurn[] => {
+    if (!meeting?.transcript) return [];
+    try {
+      return JSON.parse(meeting.transcript);
+    } catch (e) {
+      // Fallback if raw text
+      return [{ speaker: "Speaker 1", text: meeting.transcript, timestamp: "00:00" }];
+    }
+  };
+
+  const fetchMeetingDetails = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to fetch meeting details");
+      }
+      setMeeting(data);
+      setActionItems(data.actionItems || []);
+      setEmail(data.email || null);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMeetingDetails();
+  }, [meetingId]);
+
+  // Synchronized Toggle of Action Items
+  const handleToggleAction = async (itemId: string) => {
+    try {
+      const res = await fetch(`/api/action-items/${itemId}/toggle`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      const updatedItem = await res.json();
+      if (!res.ok) {
+        throw new Error(updatedItem.error || "Failed to toggle action item status");
+      }
+
+      // Update local state
+      setActionItems((prev) =>
+        prev.map((item) => (item.id === itemId ? { ...item, status: updatedItem.status } : item))
+      );
+      onUpdateStats(); // trigger stats reload in parent
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Failed to update action item status.");
+    }
+  };
+
+  // Speaker color map
+  const getSpeakerColorClass = (speaker: string) => {
+    const speakers = Array.from(new Set(getSpeakerTurns().map((t) => t.speaker)));
+    const colors = [
+      "bg-amber-100 text-amber-800 border-amber-200",
+      "bg-emerald-100 text-emerald-800 border-emerald-200",
+      "bg-sky-100 text-sky-800 border-sky-200",
+      "bg-violet-100 text-violet-800 border-violet-200",
+      "bg-rose-100 text-rose-800 border-rose-200",
+    ];
+    const index = speakers.indexOf(speaker) % colors.length;
+    return colors[index] || "bg-zinc-100 text-zinc-800 border-zinc-200";
+  };
+
+  const copyEmailToClipboard = () => {
+    if (!email) return;
+    const fullText = `Subject: ${email.subject}\n\n${email.body}`;
+    navigator.clipboard.writeText(fullText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownloadTxt = () => {
+    if (!meeting) return;
+    const turns = getSpeakerTurns();
+    const transcriptText = turns.map((t) => `${t.speaker} [${t.timestamp}]: ${t.text}`).join("\n");
+    
+    const fileContent = `MEETING DETAILS: ${meeting.title}\nDate: ${formatDate(meeting.date)}\nCategory: ${meeting.category}\n\nAI SUMMARY:\n${meeting.summary}\n\nACTION ITEMS:\n${actionItems.map(a => `- [${a.status === 'completed' ? 'X' : ' '}] ${a.task} (Assigned: ${a.assignedTo}, Due: ${a.deadline})`).join("\n")}\n\nTRANSCRIPT:\n${transcriptText}`;
+    
+    const element = document.createElement("a");
+    const file = new Blob([fileContent], { type: "text/plain" });
+    element.href = URL.createObjectURL(file);
+    element.download = `${meeting.title.toLowerCase().replace(/\s+/g, "_")}_analysis.txt`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
+  const formatDuration = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    const remMins = mins % 60;
+    return `${hrs}h ${remMins}m`;
+  };
+
+  const formatDate = (isoString: string) => {
+    const d = new Date(isoString);
+    return d.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  // Custom parser to format markdown/plain-text summaries into clean, styled blocks
+  const renderSummaryContent = (text: string) => {
+    if (!text) return null;
+    const lines = text.split("\n");
+    return (
+      <div className="space-y-4">
+        {lines.map((line, idx) => {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("###")) {
+            return (
+              <h4 key={idx} className="text-sm font-semibold text-zinc-950 mt-5 border-b border-zinc-100 pb-1.5 uppercase tracking-wider font-display">
+                {trimmed.replace("###", "").trim()}
+              </h4>
+            );
+          } else if (trimmed.startsWith("##")) {
+            return (
+              <h3 key={idx} className="text-base font-bold text-zinc-950 mt-6 font-display border-b border-zinc-200 pb-2">
+                {trimmed.replace("##", "").trim()}
+              </h3>
+            );
+          } else if (trimmed.startsWith("#")) {
+            return (
+              <h2 key={idx} className="text-lg font-bold text-zinc-950 font-display mt-6">
+                {trimmed.replace("#", "").trim()}
+              </h2>
+            );
+          } else if (trimmed.startsWith("-") || trimmed.startsWith("*")) {
+            return (
+              <ul key={idx} className="list-disc pl-5 text-xs text-zinc-600 leading-relaxed space-y-1 my-1">
+                <li>{trimmed.substring(1).trim()}</li>
+              </ul>
+            );
+          } else if (trimmed === "") {
+            return <div key={idx} className="h-2" />;
+          } else {
+            return (
+              <p key={idx} className="text-xs text-zinc-600 leading-relaxed">
+                {trimmed}
+              </p>
+            );
+          }
+        })}
+      </div>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto py-20 text-center flex flex-col items-center justify-center">
+        <svg className="animate-spin h-8 w-8 text-zinc-900 mb-3" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
+        <p className="text-zinc-500 text-sm font-medium">Assembling intelligence parameters...</p>
+      </div>
+    );
+  }
+
+  if (error || !meeting) {
+    return (
+      <div className="max-w-4xl mx-auto py-12 text-center">
+        <div className="p-4 bg-red-50 border border-red-100 text-red-600 rounded-xl max-w-md mx-auto">
+          <p className="font-semibold text-sm">Error Loading Meeting Details</p>
+          <p className="text-xs mt-1">{error || "The selected meeting was not found."}</p>
+        </div>
+        <button
+          onClick={onBack}
+          className="mt-6 text-zinc-500 hover:text-zinc-950 font-semibold text-sm inline-flex items-center gap-2"
+        >
+          <ArrowLeft className="h-4 w-4" /> Go back
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div id="meeting_detail_view" className="max-w-6xl mx-auto px-4 md:px-8 py-6 font-sans">
+      {/* Back navigation & Actions */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <button
+          id="detail_back_btn"
+          onClick={onBack}
+          className="text-zinc-600 hover:text-zinc-950 font-semibold text-xs inline-flex items-center gap-2 transition-colors cursor-pointer group"
+        >
+          <ArrowLeft className="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" />
+          Back to list
+        </button>
+
+        <div className="flex items-center gap-2.5">
+          <button
+            id="detail_download_txt_btn"
+            onClick={handleDownloadTxt}
+            className="border border-zinc-200 hover:border-zinc-400 bg-white text-zinc-700 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export TXT
+          </button>
+        </div>
+      </div>
+
+      {/* Meta Header */}
+      <div className="bg-white border border-zinc-200 rounded-2xl p-6 md:p-8 meeting-card-shadow mb-8 relative overflow-hidden">
+        <div className="absolute top-0 right-0 h-24 w-24 bg-zinc-50 rounded-bl-full pointer-events-none" />
+        
+        <div className="flex items-start gap-4">
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className="bg-zinc-900 text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase tracking-wider">
+              {meeting.category || "General"}
+            </span>
+          </div>
+        </div>
+
+        <h1 className="text-2xl md:text-3xl font-display font-semibold text-zinc-950 tracking-tight mt-3">
+          {meeting.title}
+        </h1>
+
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-4 text-xs font-semibold text-zinc-500">
+          <span className="flex items-center gap-1.5">
+            <Calendar className="h-4 w-4 text-zinc-400" />
+            {formatDate(meeting.date)}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Clock className="h-4 w-4 text-zinc-400" />
+            {formatDuration(meeting.duration)}
+          </span>
+        </div>
+      </div>
+
+      {/* Sub-tabs Navigation */}
+      <div className="flex border-b border-zinc-200 mb-6">
+        <button
+          id="tab_summary_btn"
+          onClick={() => setActiveTab("summary")}
+          className={`pb-3.5 text-xs font-bold transition-all relative px-2 cursor-pointer ${
+            activeTab === "summary" ? "text-zinc-950" : "text-zinc-400 hover:text-zinc-600"
+          }`}
+        >
+          <span className="flex items-center gap-1.5">
+            <Sparkles className="h-4.5 w-4.5 text-zinc-800" />
+            AI Summary
+          </span>
+          {activeTab === "summary" && (
+            <motion.div layoutId="detail-tabs-bar" className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-950" />
+          )}
+        </button>
+
+        <button
+          id="tab_transcript_btn"
+          onClick={() => setActiveTab("transcript")}
+          className={`pb-3.5 text-xs font-bold transition-all relative px-2 ml-6 cursor-pointer ${
+            activeTab === "transcript" ? "text-zinc-950" : "text-zinc-400 hover:text-zinc-600"
+          }`}
+        >
+          <span className="flex items-center gap-1.5">
+            <FileText className="h-4.5 w-4.5" />
+            Dialogue Transcript
+          </span>
+          {activeTab === "transcript" && (
+            <motion.div layoutId="detail-tabs-bar" className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-950" />
+          )}
+        </button>
+
+        <button
+          id="tab_actions_btn"
+          onClick={() => setActiveTab("actions")}
+          className={`pb-3.5 text-xs font-bold transition-all relative px-2 ml-6 cursor-pointer ${
+            activeTab === "actions" ? "text-zinc-950" : "text-zinc-400 hover:text-zinc-600"
+          }`}
+        >
+          <span className="flex items-center gap-1.5">
+            <CheckCircle className="h-4.5 w-4.5" />
+            Action Items ({actionItems.filter((a) => a.status === "pending").length})
+          </span>
+          {activeTab === "actions" && (
+            <motion.div layoutId="detail-tabs-bar" className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-950" />
+          )}
+        </button>
+
+        <button
+          id="tab_email_btn"
+          onClick={() => setActiveTab("email")}
+          className={`pb-3.5 text-xs font-bold transition-all relative px-2 ml-6 cursor-pointer ${
+            activeTab === "email" ? "text-zinc-950" : "text-zinc-400 hover:text-zinc-600"
+          }`}
+        >
+          <span className="flex items-center gap-1.5">
+            <Mail className="h-4.5 w-4.5" />
+            Follow-up Email
+          </span>
+          {activeTab === "email" && (
+            <motion.div layoutId="detail-tabs-bar" className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-950" />
+          )}
+        </button>
+      </div>
+
+      {/* Tab Panels */}
+      <div className="min-h-[300px]">
+        {/* PANEL A: AI SUMMARY */}
+        {activeTab === "summary" && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white border border-zinc-200 rounded-2xl p-6 md:p-8 meeting-card-shadow"
+          >
+            <div className="flex items-center gap-2 mb-4 border-b border-zinc-100 pb-3">
+              <Sparkles className="h-5 w-5 text-amber-500" />
+              <h3 className="text-base font-semibold text-zinc-950 font-display">Executive Intel Summaries</h3>
+            </div>
+            <div className="prose prose-zinc max-w-none">
+              {renderSummaryContent(meeting.summary || "Summary parameters currently loading or absent.")}
+            </div>
+          </motion.div>
+        )}
+
+        {/* PANEL B: DIALOGUE TRANSCRIPT */}
+        {activeTab === "transcript" && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4"
+          >
+            {getSpeakerTurns().map((turn, index) => (
+              <div
+                key={index}
+                className="bg-white border border-zinc-200 rounded-xl p-4 flex gap-4 meeting-card-shadow hover:border-zinc-300 transition-colors"
+              >
+                <div className="flex flex-col items-center">
+                  <span
+                    className={`h-9 w-9 rounded-full border flex items-center justify-center font-bold text-xs shadow-inner uppercase ${getSpeakerColorClass(
+                      turn.speaker
+                    )}`}
+                  >
+                    {turn.speaker.substring(0, 2)}
+                  </span>
+                  <span className="text-[10px] font-bold font-mono text-zinc-400 mt-1.5">
+                    {turn.timestamp}
+                  </span>
+                </div>
+                
+                <div className="flex-1">
+                  <h4 className="text-xs font-bold text-zinc-900 mb-0.5">
+                    {turn.speaker}
+                  </h4>
+                  <p className="text-xs text-zinc-600 leading-relaxed">
+                    {turn.text}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </motion.div>
+        )}
+
+        {/* PANEL C: ACTION ITEMS */}
+        {activeTab === "actions" && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white border border-zinc-200 rounded-2xl p-6 md:p-8 meeting-card-shadow"
+          >
+            <div className="flex items-center justify-between mb-6 border-b border-zinc-100 pb-3">
+              <h3 className="text-base font-semibold text-zinc-950 font-display flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-zinc-800" />
+                Assigned Deliverables
+              </h3>
+              <span className="text-xs bg-zinc-100 text-zinc-600 px-2.5 py-1 rounded-full font-bold">
+                {actionItems.filter((a) => a.status === "completed").length} / {actionItems.length} Done
+              </span>
+            </div>
+
+            {actionItems.length > 0 ? (
+              <div className="divide-y divide-zinc-100">
+                {actionItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="py-4 flex items-start gap-3.5 first:pt-0 last:pb-0 group"
+                  >
+                    <button
+                      id={`toggle_action_btn_${item.id}`}
+                      onClick={() => handleToggleAction(item.id)}
+                      className={`h-5 w-5 rounded border flex items-center justify-center mt-0.5 transition-all cursor-pointer ${
+                        item.status === "completed"
+                          ? "bg-zinc-950 border-zinc-950 text-white"
+                          : "border-zinc-300 hover:border-zinc-500 bg-white"
+                      }`}
+                    >
+                      {item.status === "completed" && <Check className="h-3.5 w-3.5 stroke-[3]" />}
+                    </button>
+
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className={`text-xs font-semibold text-zinc-900 leading-relaxed ${
+                          item.status === "completed" ? "line-through text-zinc-400 font-medium" : ""
+                        }`}
+                      >
+                        {item.task}
+                      </p>
+                      
+                      <div className="flex items-center gap-3 mt-1.5 text-xs text-zinc-400">
+                        <span className="flex items-center gap-1 font-bold text-zinc-700 bg-zinc-100 px-2 py-0.5 rounded text-[10px]">
+                          <UserIcon className="h-3 w-3" />
+                          {item.assignedTo}
+                        </span>
+                        {item.deadline && (
+                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wide">
+                            Due: {item.deadline}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-12 text-center text-zinc-400 text-xs">
+                No active action items extracted for this meeting.
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* PANEL D: FOLLOW-UP EMAIL */}
+        {activeTab === "email" && email && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4"
+          >
+            {/* Subject card */}
+            <div className="bg-white border border-zinc-200 rounded-xl p-4 meeting-card-shadow flex items-center justify-between">
+              <div className="min-w-0 flex-1 pr-4">
+                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">
+                  Subject Line
+                </span>
+                <p className="text-xs font-bold text-zinc-900 truncate">
+                  {email.subject}
+                </p>
+              </div>
+              <button
+                id="copy_subject_btn"
+                onClick={() => {
+                  navigator.clipboard.writeText(email.subject);
+                  setCopiedSubject(true);
+                  setTimeout(() => setCopiedSubject(false), 2000);
+                }}
+                className="text-zinc-400 hover:text-zinc-900 p-2 border border-zinc-100 hover:border-zinc-200 rounded-lg bg-zinc-50/50 hover:bg-zinc-50 cursor-pointer transition-all flex items-center justify-center"
+              >
+                {copiedSubject ? <Check className="h-4.5 w-4.5 text-zinc-900" /> : <Copy className="h-4.5 w-4.5" />}
+              </button>
+            </div>
+
+            {/* Body Card */}
+            <div className="bg-white border border-zinc-200 rounded-2xl p-6 md:p-8 meeting-card-shadow">
+              <div className="flex justify-between items-center mb-4 border-b border-zinc-100 pb-3">
+                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                  Email Content Body
+                </span>
+                <button
+                  id="copy_full_email_btn"
+                  onClick={copyEmailToClipboard}
+                  className="text-xs font-semibold text-zinc-700 hover:text-zinc-950 flex items-center gap-1.5 border border-zinc-200 bg-white px-3 py-1.5 rounded-lg shadow-sm hover:border-zinc-400 transition-colors cursor-pointer"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 text-zinc-900" /> Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5" /> Copy Full Email
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="text-xs text-zinc-600 leading-relaxed font-mono bg-zinc-50/50 p-5 border border-zinc-100 rounded-xl whitespace-pre-wrap">
+                {email.body}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
+}

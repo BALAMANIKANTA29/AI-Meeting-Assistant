@@ -1,0 +1,6 @@
+{
+  "name": "AI Meeting Assistant",
+  "description": "Record, transcribe, summarize, and organize your meetings with AI-powered insights, action items, and follow-up emails.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
