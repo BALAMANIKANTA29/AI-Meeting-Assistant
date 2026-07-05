@@ -80,6 +80,15 @@ var app = (0, import_express.default)();
 var PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.use(import_express.default.json({ limit: "50mb" }));
 app.use(import_express.default.urlencoded({ limit: "50mb", extended: true }));
+app.use((req, res, next) => {
+  if (process.env.VERCEL) {
+    const originalUrl = req.headers["x-vercel-forwarded-path"] || req.originalUrl;
+    if (originalUrl) {
+      req.url = originalUrl;
+    }
+  }
+  next();
+});
 var isVercel = process.env.VERCEL === "1" || !!process.env.VERCEL;
 var DB_FILE = isVercel ? import_path.default.join("/tmp", "db.json") : import_path.default.join(process.cwd(), "db.json");
 function initDb() {

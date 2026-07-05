@@ -54,6 +54,17 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+// Vercel path-rewrite middleware to restore original requested URL path for Express router
+app.use((req, res, next) => {
+  if (process.env.VERCEL) {
+    const originalUrl = (req.headers["x-vercel-forwarded-path"] as string) || req.originalUrl;
+    if (originalUrl) {
+      req.url = originalUrl;
+    }
+  }
+  next();
+});
+
 const isVercel = process.env.VERCEL === "1" || !!process.env.VERCEL;
 const DB_FILE = isVercel
   ? path.join("/tmp", "db.json")
