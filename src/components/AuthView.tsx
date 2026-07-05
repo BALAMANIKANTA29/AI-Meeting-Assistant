@@ -54,11 +54,13 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
         className="w-full max-w-md bg-white border border-zinc-200/80 rounded-2xl p-8 meeting-card-shadow relative z-10"
       >
         <div className="flex flex-col items-center mb-8">
-          <div className="h-12 w-12 rounded-xl bg-zinc-900 flex items-center justify-center text-white mb-3 shadow-md shadow-zinc-900/10">
-            <Mic className="h-6 w-6" />
-          </div>
+          <img
+            src="/logo.jpg"
+            alt="Zero Trust Logo"
+            className="h-12 w-12 rounded-xl object-contain mb-3 shadow-md border border-zinc-100 bg-white"
+          />
           <h1 className="text-2xl font-display font-semibold tracking-tight text-zinc-900">
-            AI Meeting Assistant
+            Meeting Assistant
           </h1>
           <p className="text-zinc-500 text-sm mt-1 text-center">
             Record. Transcribe. Summarize. Organize. Act.

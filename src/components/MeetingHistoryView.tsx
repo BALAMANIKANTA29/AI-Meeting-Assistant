@@ -16,15 +16,28 @@ interface MeetingHistoryViewProps {
   meetings: Meeting[];
   onSelectMeeting: (id: string) => void;
   onDeleteMeeting: (id: string) => void;
+  onBulkDeleteMeetings?: (ids: string[]) => void;
 }
 
 export default function MeetingHistoryView({
   meetings,
   onSelectMeeting,
   onDeleteMeeting,
+  onBulkDeleteMeetings,
 }: MeetingHistoryViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    if (confirm(`Move ${selectedIds.length} selected meetings to the Recycle Bin?`)) {
+      if (onBulkDeleteMeetings) {
+        onBulkDeleteMeetings(selectedIds);
+      }
+      setSelectedIds([]);
+    }
+  };
 
   const categories = ["All", ...Array.from(new Set(meetings.map((m) => m.category || "General")))];
 
@@ -57,7 +70,7 @@ export default function MeetingHistoryView({
 
   const handleDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); // Prevent opening meeting details when clicking delete
-    if (confirm("Are you sure you want to delete this meeting record? This action is irreversible.")) {
+    if (confirm("Move this meeting to the Recycle Bin? You can restore it later if needed.")) {
       onDeleteMeeting(id);
     }
   };
@@ -115,6 +128,41 @@ export default function MeetingHistoryView({
       </div>
 
       {/* Grid or List of archived meetings */}
+      {selectedIds.length > 0 && (
+        <div className="flex items-center justify-between bg-zinc-50 border border-zinc-200 p-3 rounded-lg mb-4 text-xs">
+          <div className="flex items-center gap-2 font-semibold text-zinc-700">
+            <input
+              type="checkbox"
+              checked={selectedIds.length === filteredMeetings.length}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setSelectedIds(filteredMeetings.map(m => m.id));
+                } else {
+                  setSelectedIds([]);
+                }
+              }}
+              className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-950 cursor-pointer"
+            />
+            <span>Selected {selectedIds.length} of {filteredMeetings.length} meetings</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds([])}
+              className="text-zinc-500 hover:text-zinc-800 font-semibold px-2.5 py-1 transition-colors cursor-pointer"
+            >
+              Cancel Selection
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Move Selected to Trash
+            </button>
+          </div>
+        </div>
+      )}
+
       {filteredMeetings.length > 0 ? (
         <div className="space-y-4">
           <AnimatePresence initial={false}>
@@ -129,6 +177,20 @@ export default function MeetingHistoryView({
                 className="group border border-zinc-200/90 hover:border-zinc-400 bg-white hover:bg-zinc-50/30 p-5 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-all cursor-pointer shadow-sm hover:shadow"
               >
                 <div className="flex items-start gap-4">
+                  <div className="flex items-center h-11" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(meeting.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds(prev => [...prev, meeting.id]);
+                        } else {
+                          setSelectedIds(prev => prev.filter(id => id !== meeting.id));
+                        }
+                      }}
+                      className="h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-950 cursor-pointer"
+                    />
+                  </div>
                   <div className="p-3 bg-zinc-50 rounded-xl group-hover:bg-zinc-100 transition-colors shadow-inner text-zinc-800">
                     <FileText className="h-5 w-5" />
                   </div>

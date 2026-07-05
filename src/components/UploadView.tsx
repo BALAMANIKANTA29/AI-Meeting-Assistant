@@ -66,6 +66,7 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("Engineering");
   const [topic, setTopic] = useState("");
+  const [language, setLanguage] = useState("English");
   
   // File Upload State
   const [dragActive, setDragActive] = useState(false);
@@ -328,6 +329,7 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
           duration: recordingSeconds || 60,
           topic: topic || "Spontaneous microphone recording session.",
           audioData: base64Audio,
+          language: language,
         };
       } else {
         // Upload Tab
@@ -342,6 +344,7 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
           duration: 180, // Default simulated duration for uploaded files
           topic: topic || `Uploaded audio analysis: ${uploadedFile.name}`,
           audioData: base64Audio,
+          language: language,
         };
       }
 
@@ -575,7 +578,7 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
                 </div>
 
                 {/* Manual form additions for recording */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-zinc-100 pt-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-zinc-100 pt-6">
                   <div>
                     <label className="block text-xs font-semibold text-zinc-700 mb-1.5" htmlFor="rec_title">
                       Meeting Title
@@ -606,7 +609,30 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
                       <option>General</option>
                     </select>
                   </div>
-                  <div className="md:col-span-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-700 mb-1.5" htmlFor="rec_language">
+                      Output Language
+                    </label>
+                    <select
+                      id="rec_language"
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      className="block w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 transition-colors"
+                    >
+                      <option>English</option>
+                      <option>Spanish</option>
+                      <option>French</option>
+                      <option>German</option>
+                      <option>Hindi</option>
+                      <option>Telugu</option>
+                      <option>Tamil</option>
+                      <option>Kannada</option>
+                      <option>Japanese</option>
+                      <option>Chinese</option>
+                      <option>Portuguese</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-3">
                     <label className="block text-xs font-semibold text-zinc-700 mb-1.5" htmlFor="rec_topic">
                       Agenda Topics (Optional background for AI context)
                     </label>
@@ -692,9 +718,8 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
                   )}
                 </div>
 
-                {/* Form parameters for uploaded file */}
                 {uploadedFile && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white border border-zinc-200 rounded-xl p-5 meeting-card-shadow">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white border border-zinc-200 rounded-xl p-5 meeting-card-shadow">
                     <div>
                       <label className="block text-xs font-semibold text-zinc-700 mb-1.5" htmlFor="up_title">
                         Meeting Title
@@ -725,7 +750,30 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
                         <option>General</option>
                       </select>
                     </div>
-                    <div className="md:col-span-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 mb-1.5" htmlFor="up_language">
+                        Output Language
+                      </label>
+                      <select
+                        id="up_language"
+                        value={language}
+                        onChange={(e) => setLanguage(e.target.value)}
+                        className="block w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 transition-colors"
+                      >
+                        <option>English</option>
+                        <option>Spanish</option>
+                        <option>French</option>
+                        <option>German</option>
+                        <option>Hindi</option>
+                        <option>Telugu</option>
+                        <option>Tamil</option>
+                        <option>Kannada</option>
+                        <option>Japanese</option>
+                        <option>Chinese</option>
+                        <option>Portuguese</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-3">
                       <label className="block text-xs font-semibold text-zinc-700 mb-1.5" htmlFor="up_topic">
                         Meeting Agenda (Helps guide speech-to-text accuracy)
                       </label>
@@ -738,8 +786,8 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
                         className="block w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 transition-colors resize-none"
                       />
                     </div>
-
-                    <div className="md:col-span-2 pt-2 flex justify-end">
+ 
+                    <div className="md:col-span-3 pt-2 flex justify-end">
                       <button
                         id="analyze_uploaded_file_btn"
                         onClick={() => handleAnalyze()}

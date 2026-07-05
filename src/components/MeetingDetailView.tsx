@@ -39,6 +39,8 @@ export default function MeetingDetailView({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedSubject, setCopiedSubject] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState("English");
+  const [translating, setTranslating] = useState(false);
 
   // Parse speaker turns safely
   const getSpeakerTurns = (): SpeakerTurn[] => {
@@ -64,6 +66,9 @@ export default function MeetingDetailView({
       setMeeting(data);
       setActionItems(data.actionItems || []);
       setEmail(data.email || null);
+      if (data.language) {
+        setSelectedLanguage(data.language);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -124,20 +129,199 @@ export default function MeetingDetailView({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownloadTxt = () => {
+  const handleTranslate = async (lang: string) => {
+    setSelectedLanguage(lang);
+    setTranslating(true);
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}/translate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ language: lang }),
+      });
+
+      const responseText = await res.text();
+      let responseData: any = {};
+      
+      if (responseText) {
+        try {
+          responseData = JSON.parse(responseText);
+        } catch (e) {
+          throw new Error("Server returned an invalid JSON response.");
+        }
+      }
+
+      if (!res.ok) {
+        throw new Error(responseData.error || `Translation failed with status code ${res.status}`);
+      }
+
+      setMeeting(responseData);
+      setActionItems(responseData.actionItems || []);
+      setEmail(responseData.email || null);
+    } catch (err: any) {
+      console.error("Translation error:", err);
+      let alertMsg = err.message || "Failed to translate meeting.";
+      if (alertMsg.includes("quota") || alertMsg.includes("RESOURCE_EXHAUSTED") || alertMsg.includes("429")) {
+        const match = alertMsg.match(/Please retry in ([0-9.]+[a-zA-Z]+)/i);
+        const retryTime = match ? ` in ${match[1]}` : " in a few seconds";
+        alertMsg = `Gemini API Rate Limit Exceeded: You have exceeded the daily request limit. Please wait${retryTime} and try again!`;
+      }
+      alert(alertMsg);
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+  const parseMarkdownToHtml = (markdown: string): string => {
+    if (!markdown) return "";
+    let html = markdown;
+
+    // Convert code blocks
+    html = html.replace(/```([\s\S]*?)```/g, "<pre style='background: #f4f4f5; padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;'>$1</pre>");
+
+    // Convert headers (e.g. ### Header)
+    html = html.replace(/###\s+(.*)/g, "<h4 style='font-size: 13px; font-weight: 700; color: #18181b; margin-top: 14px; margin-bottom: 6px;'>$1</h4>");
+    html = html.replace(/##\s+(.*)/g, "<h3 style='font-size: 15px; font-weight: 700; color: #18181b; margin-top: 18px; margin-bottom: 8px;'>$1</h3>");
+    html = html.replace(/#\s+(.*)/g, "<h2 style='font-size: 17px; font-weight: 800; color: #18181b; margin-top: 22px; margin-bottom: 10px;'>$1</h2>");
+
+    // Convert bold text (**bold**)
+    html = html.replace(/\*\*(.*?)\*\*/g, "<strong style='font-weight: 600; color: #09090b;'>$1</strong>");
+
+    // Convert bullet points (- item or * item)
+    const lines = html.split("\n");
+    let inList = false;
+    const formattedLines = lines.map(line => {
+      const bulletMatch = line.match(/^[\s]*[-*]\s+(.*)/);
+      if (bulletMatch) {
+        let prefix = "";
+        if (!inList) {
+          inList = true;
+          prefix = "<ul style='margin-left: 20px; margin-bottom: 10px; list-style-type: disc; padding-left: 5px;'>";
+        }
+        return prefix + `<li style='margin-bottom: 4px; font-size: 12.5px; color: #27272a;'>${bulletMatch[1]}</li>`;
+      } else {
+        let suffix = "";
+        if (inList) {
+          inList = false;
+          suffix = "</ul>";
+        }
+        return suffix + line;
+      }
+    });
+    html = formattedLines.join("\n");
+
+    // Convert single newlines to <br/> outside lists
+    html = html.replace(/\n/g, "<br/>");
+    return html;
+  };
+
+  const handleExportPdf = () => {
     if (!meeting) return;
     const turns = getSpeakerTurns();
-    const transcriptText = turns.map((t) => `${t.speaker} [${t.timestamp}]: ${t.text}`).join("\n");
-    
-    const fileContent = `MEETING DETAILS: ${meeting.title}\nDate: ${formatDate(meeting.date)}\nCategory: ${meeting.category}\n\nAI SUMMARY:\n${meeting.summary}\n\nACTION ITEMS:\n${actionItems.map(a => `- [${a.status === 'completed' ? 'X' : ' '}] ${a.task} (Assigned: ${a.assignedTo}, Due: ${a.deadline})`).join("\n")}\n\nTRANSCRIPT:\n${transcriptText}`;
-    
-    const element = document.createElement("a");
-    const file = new Blob([fileContent], { type: "text/plain" });
-    element.href = URL.createObjectURL(file);
-    element.download = `${meeting.title.toLowerCase().replace(/\s+/g, "_")}_analysis.txt`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+    const transcriptHtml = turns.map((t) => `
+      <div style="margin-bottom: 12px; page-break-inside: avoid;">
+        <strong style="color: #18181b; font-size: 13px;">${t.speaker}</strong>
+        <span style="color: #71717a; font-size: 11px; margin-left: 6px;">${t.timestamp}</span>
+        <div style="color: #3f3f46; font-size: 13px; margin-top: 4px; line-height: 1.5;">${t.text.replace(/\n/g, '<br/>')}</div>
+      </div>
+    `).join("");
+
+    const actionItemsHtml = actionItems.map((a) => `
+      <tr style="border-bottom: 1px solid #e4e4e7;">
+        <td style="padding: 10px 0; font-size: 12px; color: #18181b;">
+          <span style="display: inline-block; width: 12px; height: 12px; border: 1px solid #a1a1aa; border-radius: 3px; margin-right: 8px; vertical-align: middle; background-color: ${a.status === 'completed' ? '#18181b' : 'transparent'}; font-size: 8px; color: white; text-align: center; line-height: 10px; font-weight: bold;">${a.status === 'completed' ? '✓' : ''}</span>
+          ${a.task}
+        </td>
+        <td style="padding: 10px 0; font-size: 12px; color: #3f3f46; text-align: center;">${a.assignedTo}</td>
+        <td style="padding: 10px 0; font-size: 12px; color: #71717a; text-align: right;">${a.deadline}</td>
+      </tr>
+    `).join("");
+
+    const emailHtml = email ? `
+      <div style="margin-top: 16px; border: 1px solid #e4e4e7; padding: 20px; border-radius: 12px; background-color: #fafafa; page-break-inside: avoid;">
+        <h3 style="margin-top: 0; color: #18181b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #f4f4f5; padding-bottom: 8px; margin-bottom: 12px;">Subject: ${email.subject}</h3>
+        <p style="color: #3f3f46; font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; margin-bottom: 0;">${email.body}</p>
+      </div>
+    ` : "";
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${meeting.title} - Meeting Report</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+            body {
+              font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+              color: #18181b;
+              line-height: 1.6;
+              padding: 40px;
+              max-width: 800px;
+              margin: 0 auto;
+            }
+            h1 { font-size: 24px; font-weight: 800; margin-bottom: 4px; color: #09090b; letter-spacing: -0.5px; }
+            .meta { font-size: 11px; color: #71717a; margin-bottom: 24px; border-bottom: 1px solid #e4e4e7; padding-bottom: 16px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+            h2 { font-size: 15px; font-weight: 700; margin-top: 32px; margin-bottom: 12px; color: #18181b; border-bottom: 2px solid #18181b; padding-bottom: 4px; letter-spacing: -0.2px; }
+            .summary { font-size: 13px; color: #27272a; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+            th { text-align: left; padding-bottom: 8px; border-bottom: 2px solid #e4e4e7; font-size: 11px; text-transform: uppercase; color: #71717a; letter-spacing: 0.5px; }
+            @media print {
+              body { padding: 10px; }
+              @page { size: A4; margin: 15mm; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>${meeting.title}</h1>
+          <div class="meta">
+            Date: ${new Date(meeting.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} | Category: ${meeting.category} | Duration: ${Math.round(meeting.duration / 60)} minutes
+          </div>
+
+          <h2>AI MEETING SUMMARY</h2>
+          <div class="summary">${parseMarkdownToHtml(meeting.summary)}</div>
+
+          ${actionItems.length > 0 ? `
+            <h2>ACTION ITEMS</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th style="text-align: left; padding-bottom: 8px;">Task</th>
+                  <th style="text-align: center; width: 120px; padding-bottom: 8px;">Assigned To</th>
+                  <th style="text-align: right; width: 100px; padding-bottom: 8px;">Deadline</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${actionItemsHtml}
+              </tbody>
+            </table>
+          ` : ""}
+
+          ${emailHtml ? `
+            <h2>FOLLOW-UP EMAIL</h2>
+            ${emailHtml}
+          ` : ""}
+
+          ${turns.length > 0 ? `
+            <h2 style="page-break-before: always;">MEETING TRANSCRIPT</h2>
+            <div style="margin-top: 16px;">
+              ${transcriptHtml}
+            </div>
+          ` : ""}
+
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const formatDuration = (sec: number) => {
@@ -249,13 +433,33 @@ export default function MeetingDetailView({
         </button>
 
         <div className="flex items-center gap-2.5">
+          <select
+            id="detail_language_select"
+            value={selectedLanguage}
+            disabled={translating}
+            onChange={(e) => handleTranslate(e.target.value)}
+            className="border border-zinc-200 hover:border-zinc-400 bg-white text-zinc-700 px-3 py-1.5 rounded-lg text-xs font-semibold focus:outline-none transition-colors cursor-pointer disabled:opacity-50"
+          >
+            <option value="English">English</option>
+            <option value="Spanish">Spanish</option>
+            <option value="French">French</option>
+            <option value="German">German</option>
+            <option value="Hindi">Hindi</option>
+            <option value="Telugu">Telugu</option>
+            <option value="Tamil">Tamil</option>
+            <option value="Kannada">Kannada</option>
+            <option value="Japanese">Japanese</option>
+            <option value="Chinese">Chinese</option>
+            <option value="Portuguese">Portuguese</option>
+          </select>
+
           <button
-            id="detail_download_txt_btn"
-            onClick={handleDownloadTxt}
+            id="detail_download_pdf_btn"
+            onClick={handleExportPdf}
             className="border border-zinc-200 hover:border-zinc-400 bg-white text-zinc-700 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Download className="h-3.5 w-3.5" />
-            Export TXT
+            Export PDF
           </button>
         </div>
       </div>
@@ -356,7 +560,16 @@ export default function MeetingDetailView({
       </div>
 
       {/* Tab Panels */}
-      <div className="min-h-[300px]">
+      <div className="min-h-[300px] relative">
+        {translating && (
+          <div className="absolute inset-0 bg-white/75 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-2xl">
+            <svg className="animate-spin h-8 w-8 text-zinc-900 mb-3" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            <p className="text-zinc-800 text-xs font-bold animate-pulse">Translating entire meeting archive into {selectedLanguage}...</p>
+          </div>
+        )}
         {/* PANEL A: AI SUMMARY */}
         {activeTab === "summary" && (
           <motion.div
@@ -403,7 +616,7 @@ export default function MeetingDetailView({
                   <h4 className="text-xs font-bold text-zinc-900 mb-0.5">
                     {turn.speaker}
                   </h4>
-                  <p className="text-xs text-zinc-600 leading-relaxed">
+                  <p className="text-xs text-zinc-600 leading-relaxed whitespace-pre-wrap">
                     {turn.text}
                   </p>
                 </div>

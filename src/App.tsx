@@ -10,6 +10,7 @@ import {
   Mic,
   Sparkles,
   Info,
+  Trash2,
 } from "lucide-react";
 
 import { Meeting, AnalyticsSummary } from "./types";
@@ -19,6 +20,7 @@ import UploadView from "./components/UploadView";
 import MeetingHistoryView from "./components/MeetingHistoryView";
 import MeetingDetailView from "./components/MeetingDetailView";
 import SearchView from "./components/SearchView";
+import RecycleBinView from "./components/RecycleBinView";
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("meeting_auth_token"));
@@ -26,7 +28,7 @@ export default function App() {
     JSON.parse(localStorage.getItem("meeting_auth_user") || "null")
   );
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "upload" | "history" | "search">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "upload" | "history" | "search" | "trash">("dashboard");
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
 
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -114,6 +116,29 @@ export default function App() {
     }
   };
 
+  const handleBulkDeleteMeetings = async (meetingIds: string[]) => {
+    if (!token) return;
+    try {
+      const res = await fetch("/api/meetings/bulk-delete", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ids: meetingIds }),
+      });
+      if (res.ok) {
+        setMeetings((prev) => prev.filter((m) => !meetingIds.includes(m.id)));
+        fetchAllData();
+        if (selectedMeetingId && meetingIds.includes(selectedMeetingId)) {
+          setSelectedMeetingId(null);
+        }
+      }
+    } catch (err) {
+      console.error("Bulk deletion error:", err);
+    }
+  };
+
   // Render main tab contents
   const renderTabContent = () => {
     if (!analytics) {
@@ -157,6 +182,7 @@ export default function App() {
             meetings={meetings}
             onSelectMeeting={(id) => setSelectedMeetingId(id)}
             onDeleteMeeting={handleDeleteMeeting}
+            onBulkDeleteMeetings={handleBulkDeleteMeetings}
           />
         );
       case "search":
@@ -164,6 +190,13 @@ export default function App() {
           <SearchView
             token={token!}
             onSelectMeeting={(id) => setSelectedMeetingId(id)}
+          />
+        );
+      case "trash":
+        return (
+          <RecycleBinView
+            token={token!}
+            onRefreshMeetings={fetchAllData}
           />
         );
       default:
@@ -183,15 +216,17 @@ export default function App() {
         <div>
           {/* Logo heading */}
           <div className="p-6 flex items-center gap-2.5 border-b border-zinc-100">
-            <div className="h-8 w-8 rounded-lg bg-zinc-950 flex items-center justify-center text-white shadow-sm">
-              <Mic className="h-4.5 w-4.5" />
-            </div>
+            <img
+              src="/logo.jpg"
+              alt="Zero Trust Logo"
+              className="h-9 w-9 rounded-lg object-contain shadow-sm border border-zinc-100 bg-white"
+            />
             <div>
               <span className="text-sm font-semibold tracking-tight text-zinc-950 font-display block">
                 Meeting Assistant
               </span>
-              <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wide flex items-center gap-0.5 mt-0.5">
-                <Sparkles className="h-3 w-3 animate-pulse" /> Gemini Powered
+              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide flex items-center gap-0.5 mt-0.5">
+                <Sparkles className="h-3 w-3 animate-pulse" /> powered by Zero Trust
               </span>
             </div>
           </div>
@@ -260,6 +295,22 @@ export default function App() {
             >
               <Search className="h-4.5 w-4.5" />
               Semantic Search
+            </button>
+
+            <button
+              id="nav_trash"
+              onClick={() => {
+                setActiveTab("trash");
+                setSelectedMeetingId(null);
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer ${
+                activeTab === "trash" && !selectedMeetingId
+                  ? "bg-zinc-100 text-zinc-950"
+                  : "text-zinc-500 hover:text-zinc-950 hover:bg-zinc-50"
+              }`}
+            >
+              <Trash2 className="h-4.5 w-4.5" />
+              Recycle Bin
             </button>
           </nav>
         </div>

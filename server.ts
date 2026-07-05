@@ -8,8 +8,47 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
+const LANGUAGE_CODES: Record<string, string> = {
+  "English": "en",
+  "Spanish": "es",
+  "French": "fr",
+  "German": "de",
+  "Hindi": "hi",
+  "Telugu": "te",
+  "Tamil": "ta",
+  "Kannada": "kn",
+  "Japanese": "ja",
+  "Chinese": "zh",
+  "Portuguese": "pt"
+};
+
+async function translateTextFree(text: string, targetLanguage: string): Promise<string> {
+  const langCode = LANGUAGE_CODES[targetLanguage] || "en";
+  if (!text || text.trim() === "") return text;
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${langCode}&dt=t`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: `q=${encodeURIComponent(text)}`
+    });
+    if (!res.ok) throw new Error(`Translation request failed with status: ${res.status}`);
+    const json = await res.json();
+    if (Array.isArray(json) && Array.isArray(json[0])) {
+      return json[0].map((item: any) => item[0]).join("");
+    }
+    return text;
+  } catch (err) {
+    console.error("Free translation fallback failed:", err);
+    return text;
+  }
+}
+
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
 // Middleware for JSON parsing
 app.use(express.json({ limit: "50mb" }));
@@ -93,22 +132,28 @@ function authenticateToken(req: any, res: any, next: any) {
 // Lazy Gemini Client Initialization
 let aiClient: GoogleGenAI | null = null;
 
-function getGeminiClient(): GoogleGenAI {
-  if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY environment variable is required");
-    }
-    aiClient = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
+function getGeminiClient(customApiKey?: string): GoogleGenAI {
+  let apiKey = customApiKey || process.env.GEMINI_API_KEY || "";
+  // Clean potential surrounding quotes
+  if (apiKey.startsWith('"') && apiKey.endsWith('"')) {
+    apiKey = apiKey.slice(1, -1);
   }
-  return aiClient;
+  if (apiKey.startsWith("'") && apiKey.endsWith("'")) {
+    apiKey = apiKey.slice(1, -1);
+  }
+  apiKey = apiKey.trim();
+
+  if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey === "") {
+    throw new Error("GEMINI_API_KEY environment variable is required");
+  }
+  return new GoogleGenAI({
+    apiKey: apiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
+    },
+  });
 }
 
 // Preset Conversations for Meeting Simulation
@@ -212,11 +257,12 @@ app.get("/api/me", authenticateToken, (req: any, res) => {
 
 // POST /api/upload - Audio uploads, recordings, or simulations
 app.post("/api/upload", authenticateToken, async (req: any, res) => {
-  const { title, duration, category, topic, presetId, audioData } = req.body;
+  const { title, duration, category, topic, presetId, audioData, language } = req.body;
   
   const finalTitle = title || "Untitled Meeting";
   const finalCategory = category || "General";
   const finalDuration = duration ? parseInt(duration, 10) : 120;
+  const finalLanguage = language || "English";
 
   try {
     const db = readDb();
@@ -224,19 +270,19 @@ app.post("/api/upload", authenticateToken, async (req: any, res) => {
     
     // Check if we can trigger Gemini client
     let geminiAvailable = false;
+    const customApiKey = req.headers["x-gemini-key"] as string | undefined;
     try {
-      getGeminiClient();
+      getGeminiClient(customApiKey);
       geminiAvailable = true;
     } catch (e) {
       console.log("Gemini API key not found, using rules-based content generation.");
     }
 
     if (geminiAvailable) {
-      const ai = getGeminiClient();
+      const ai = getGeminiClient(customApiKey);
 
       if (audioData) {
-        // If the user recorded audio and sent it, we can actually transcribing it with Gemini!
-        // To be extremely robust, we can extract base64 clean content
+        // If the user recorded audio and sent it, we can actually transcribe it with Gemini!
         const base64Data = audioData.includes(",") ? audioData.split(",")[1] : audioData;
         const mimeType = audioData.includes(";") ? audioData.split(";")[0].split(":")[1] : "audio/webm";
 
@@ -251,7 +297,24 @@ app.post("/api/upload", authenticateToken, async (req: any, res) => {
                 },
               },
               {
-                text: "Transcribe the following meeting audio. Correct grammar and divide into speaker turns. Format strictly as a JSON array of speaker turns: [{\"speaker\": \"Speaker 1\", \"text\": \"...\", \"timestamp\": \"00:15\"}]. Identify speakers if possible, or use 'Speaker 1', 'Speaker 2'. Respond ONLY with the raw JSON array. No markdown, no triple backticks.",
+                text: `Analyze and transcribe the following audio file.
+Translate the conversation into a highly structured, chronological point-wise outline in the target language: "${finalLanguage}".
+Even if only one person is speaking, organize the transcription into logical sections or speaker turns.
+For each turn or topic:
+1. Identify the speaker (e.g. "Speaker A", "Speaker B", or their actual names if mentioned/known).
+2. Represent the speech or ideas discussed in a detailed, point-wise (bulleted) format (using '-' for bullets).
+3. Assign an estimated timestamp based on the progress of the audio (e.g. "00:00", "01:15").
+
+Return the output strictly as a JSON array of objects, where each object has "speaker", "text", and "timestamp" fields.
+Example output format:
+[
+  {
+    "speaker": "Speaker A",
+    "text": "- Highlighted the new project milestone.\\n- Discussed database scaling challenges.",
+    "timestamp": "00:00"
+  }
+]
+Respond ONLY with raw valid JSON. Do not include markdown code block formatting or backticks.`,
               }
             ],
             config: {
@@ -260,10 +323,28 @@ app.post("/api/upload", authenticateToken, async (req: any, res) => {
           });
 
           if (response.text) {
-            transcriptObj = JSON.parse(response.text.trim());
+            const cleanText = response.text.trim();
+            try {
+              const parsed = JSON.parse(cleanText);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                transcriptObj = parsed.map(turn => ({
+                  speaker: turn.speaker || "Transcript",
+                  text: turn.text || "",
+                  timestamp: turn.timestamp || "00:00"
+                }));
+              } else {
+                throw new Error("Parsed content is not a non-empty array");
+              }
+            } catch (jsonErr) {
+              console.warn("JSON parsing of transcription failed, formatting plain text fallback:", jsonErr);
+              transcriptObj = [{ speaker: "Transcript", text: cleanText, timestamp: "00:00" }];
+            }
+          } else {
+            throw new Error("No transcription content returned by the model.");
           }
         } catch (audioErr) {
-          console.error("Direct audio transcription failed, falling back to text simulation:", audioErr);
+          console.error("Direct audio transcription failed:", audioErr);
+          throw new Error("Direct audio transcription failed: " + (audioErr instanceof Error ? audioErr.message : String(audioErr)));
         }
       }
 
@@ -273,42 +354,73 @@ app.post("/api/upload", authenticateToken, async (req: any, res) => {
           ? PRESETS[presetId as keyof typeof PRESETS].description
           : (topic || "Weekly progress review and milestone discussion.");
 
-        const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: `Generate a highly realistic and detailed meeting transcript for a meeting titled "${finalTitle}". 
-          Category of meeting: "${finalCategory}".
-          Topic and Description: "${promptTopic}".
-          The transcript should contain 2 to 4 distinct speakers, realistic and natural conversation (agreements, questions, comments, decisions), and specific assignable tasks.
-          Format the output strictly as a JSON array of speaker turns:
-          [
-            {
-              "speaker": "Speaker Name",
-              "text": "What they said",
-              "timestamp": "MM:SS"
+        try {
+          const response = await ai.models.generateContent({
+            model: "gemini-3.5-flash",
+            contents: `Generate a detailed, structured meeting transcript for a meeting titled "${finalTitle}". 
+            Category of meeting: "${finalCategory}".
+            Topic and Description: "${promptTopic}".
+            Output the transcript in the target language: "${finalLanguage}".
+            Format the output strictly as a JSON array of objects representing chronological speaker turns or agenda segments.
+            For each segment:
+            1. Speaker name (e.g. "Speaker A", "Speaker B", or actual names)
+            2. Speech/content formatted as clear, detailed bullet points (using '-' for bullets)
+            3. Timestamp (e.g., "00:00", "01:30")
+            
+            Example output structure:
+            [
+              {
+                "speaker": "Speaker A",
+                "text": "- Discussed the main agenda points.\\n- Reviewed frontend mockups.",
+                "timestamp": "00:00"
+              }
+            ]
+            Output ONLY raw valid JSON.`,
+            config: {
+              responseMimeType: "application/json",
             }
-          ]
-          Make the transcript around 10 to 15 turns long. Do not include markdown wraps or backticks. Output only raw valid JSON.`,
-          config: {
-            responseMimeType: "application/json",
-          }
-        });
+          });
 
-        if (response.text) {
-          transcriptObj = JSON.parse(response.text.trim());
+          if (response.text) {
+            const parsed = JSON.parse(response.text.trim());
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              transcriptObj = parsed.map(turn => ({
+                speaker: turn.speaker || "Transcript",
+                text: turn.text || "",
+                timestamp: turn.timestamp || "00:00"
+              }));
+            }
+          }
+        } catch (simErr) {
+          console.error("Simulation generation failed, falling back to plain text:", simErr);
+          transcriptObj = [{
+            speaker: "Transcript",
+            text: `Good morning everyone. I would like to review the progress for ${finalTitle}. I have completed the initial draft of the interface layout and Gowtham is working on database index optimization to ensure we query search terms instantly.`,
+            timestamp: "00:00"
+          }];
         }
       }
     }
 
     // Backup Local Generation if Gemini fails or is missing
     if (transcriptObj.length === 0) {
-      transcriptObj = [
-        { speaker: "Bala", text: `Good morning everyone. Let's kickoff our review for ${finalTitle}.`, timestamp: "00:00" },
-        { speaker: "Ramana", text: "I've completed the initial draft of the interface layout.", timestamp: "00:25" },
-        { speaker: "Gowtham", text: "Excellent! I am working on index optimization to ensure we query search terms instantly.", timestamp: "01:10" },
-        { speaker: "Bala", text: "Great progress. Ramana, let's make sure the timeline charts are fully responsive. Gowtham, keep me updated on the database queries.", timestamp: "01:50" },
-        { speaker: "Gowtham", text: "Understood. I will have the database optimization benchmark ready by Friday.", timestamp: "02:30" },
-        { speaker: "Ramana", text: "I will finalize the dashboard components by tomorrow evening.", timestamp: "03:02" },
-      ];
+      if (audioData) {
+        transcriptObj = [
+          {
+            speaker: "Transcript",
+            text: `[Fallback Text Extraction for "${finalTitle}"]: Since a valid GEMINI_API_KEY is not configured in the backend environment, the audio file could not be sent to the transcription API. To enable real transcription, please configure your GEMINI_API_KEY in the backend .env configuration file.`,
+            timestamp: "00:00"
+          }
+        ];
+      } else {
+        transcriptObj = [
+          {
+            speaker: "Transcript",
+            text: `Good morning everyone. I would like to review the progress for ${finalTitle}. I have completed the initial draft of the interface layout and Gowtham is working on database index optimization to ensure we query search terms instantly. We need to make sure the timeline charts are fully responsive. I will finalize the dashboard components by tomorrow evening and database benchmark results will be ready by Friday. Let's keep working hard to meet the milestone.`,
+            timestamp: "00:00"
+          }
+        ];
+      }
     }
 
     const meetingId = crypto.randomUUID();
@@ -328,6 +440,7 @@ app.post("/api/upload", authenticateToken, async (req: any, res) => {
         const sumRes = await ai.models.generateContent({
           model: "gemini-3.5-flash",
           contents: `Given the following meeting transcript, generate a beautiful structured meeting summary.
+          The summary MUST be written in the target language: "${finalLanguage}".
           Use bullet points and clear headings.
           Include:
           - Executive Summary (a short paragraph)
@@ -347,6 +460,7 @@ app.post("/api/upload", authenticateToken, async (req: any, res) => {
         const actionRes = await ai.models.generateContent({
           model: "gemini-3.5-flash",
           contents: `Analyze the following meeting transcript and extract all action items.
+          The values of the action items (task, assignedTo, deadline) MUST be in the target language: "${finalLanguage}".
           For each task, find:
           - The task description
           - The person responsible (assignee)
@@ -380,6 +494,7 @@ app.post("/api/upload", authenticateToken, async (req: any, res) => {
         const emailRes = await ai.models.generateContent({
           model: "gemini-3.5-flash",
           contents: `Generate a polite, professional meeting follow-up email based on this meeting summary and action items.
+          The email subject and body MUST be written in the target language: "${finalLanguage}".
           Format the output strictly as a JSON object:
           {
             "subject": "Email Subject",
@@ -427,6 +542,7 @@ app.post("/api/upload", authenticateToken, async (req: any, res) => {
       category: finalCategory,
       transcript: transcriptText,
       summary,
+      language: finalLanguage || "English",
     };
 
     db.meetings.push(newMeeting);
@@ -463,8 +579,15 @@ app.post("/api/upload", authenticateToken, async (req: any, res) => {
 // GET /api/meetings - List meetings of logged-in user
 app.get("/api/meetings", authenticateToken, (req: any, res) => {
   const db = readDb();
-  const userMeetings = db.meetings.filter((m: any) => m.userId === req.userId);
+  const userMeetings = db.meetings.filter((m: any) => m.userId === req.userId && !m.deleted);
   res.json(userMeetings);
+});
+
+// GET /api/meetings/trash - List trashed meetings of logged-in user
+app.get("/api/meetings/trash", authenticateToken, (req: any, res) => {
+  const db = readDb();
+  const trashedMeetings = db.meetings.filter((m: any) => m.userId === req.userId && m.deleted);
+  res.json(trashedMeetings);
 });
 
 // GET /api/meetings/:id - Get meeting details
@@ -485,8 +608,231 @@ app.get("/api/meetings/:id", authenticateToken, (req: any, res) => {
   });
 });
 
-// DELETE /api/meetings/:id - Delete a meeting
+// POST /api/meetings/:id/translate - Translate meeting details on-the-fly
+app.post("/api/meetings/:id/translate", authenticateToken, async (req: any, res) => {
+  const { language } = req.body;
+  if (!language) {
+    return res.status(400).json({ error: "Language parameter is required" });
+  }
+
+  try {
+    const db = readDb();
+    const meeting = db.meetings.find((m: any) => m.id === req.params.id && m.userId === req.userId);
+    if (!meeting) {
+      return res.status(404).json({ error: "Meeting not found" });
+    }
+
+    const actionItems = db.actionItems.filter((a: any) => a.meetingId === req.params.id);
+    const email = db.emails.find((e: any) => e.meetingId === req.params.id);
+
+    let geminiAvailable = false;
+    const customApiKey = req.headers["x-gemini-key"] as string | undefined;
+    try {
+      getGeminiClient(customApiKey);
+      geminiAvailable = true;
+    } catch (e) {}
+
+    let translatedSuccess = false;
+
+    if (geminiAvailable) {
+      const ai = getGeminiClient(customApiKey);
+
+      try {
+        const translationPrompt = `You are a master translator. Translate the following meeting details into the target language: "${language}".
+
+Requirements:
+1. For "transcript": Translate ONLY the "text" field of each speaker turn. Leave "speaker" and "timestamp" fields completely unchanged.
+2. For "summary": Translate the markdown summary text, preserving all headings, markdown formatting, and bullet points.
+3. For "actionItems": Translate ONLY the "task" field. Leave "id", "meetingId", "assignedTo", "deadline", and "status" fields completely unchanged.
+4. For "email": Translate the subject and body of the email.
+
+Input Data to Translate:
+{
+  "transcript": ${meeting.transcript},
+  "summary": ${JSON.stringify(meeting.summary || "")},
+  "actionItems": ${JSON.stringify(actionItems)},
+  "email": ${email ? JSON.stringify({ subject: email.subject, body: email.body }) : "null"}
+}
+
+Respond strictly in the following JSON format:
+{
+  "transcript": <translated transcript JSON array>,
+  "summary": <translated markdown summary string>,
+  "actionItems": <translated action items JSON array>,
+  "email": {
+    "subject": <translated subject string>,
+    "body": <translated body string>
+  }
+}
+Respond ONLY with raw valid JSON. Do not include markdown code block formatting or backticks.`;
+
+        const transRes = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: translationPrompt,
+          config: {
+            responseMimeType: "application/json",
+          }
+        });
+
+        if (transRes.text) {
+          const result = JSON.parse(transRes.text.trim());
+          
+          if (result.transcript && Array.isArray(result.transcript)) {
+            meeting.transcript = JSON.stringify(result.transcript);
+          }
+          if (result.summary) {
+            meeting.summary = result.summary;
+          }
+          
+          if (result.actionItems && Array.isArray(result.actionItems)) {
+            result.actionItems.forEach((updatedItem: any) => {
+              if (updatedItem && updatedItem.id) {
+                const itemInDb = db.actionItems.find((a: any) => a.id === updatedItem.id);
+                if (itemInDb) {
+                  itemInDb.task = updatedItem.task;
+                }
+              }
+            });
+          }
+
+          if (email && result.email && result.email.subject && result.email.body) {
+            const emailInDb = db.emails.find((e: any) => e.meetingId === req.params.id);
+            if (emailInDb) {
+              emailInDb.subject = result.email.subject;
+              emailInDb.body = result.email.body;
+            }
+          }
+
+          meeting.language = language;
+          writeDb(db);
+          translatedSuccess = true;
+        }
+      } catch (transErr: any) {
+        console.warn("Gemini translation failed, falling back to Google Translate API:", transErr.message || transErr);
+      }
+    }
+
+    // Fallback to Google Translate if Gemini was not available or failed
+    if (!translatedSuccess) {
+      console.log("Using free Google Translate API fallback for language translation...");
+      
+      // Translate Transcript
+      try {
+        const turns = JSON.parse(meeting.transcript);
+        if (Array.isArray(turns)) {
+          for (const turn of turns) {
+            if (turn.text) {
+              turn.text = await translateTextFree(turn.text, language);
+            }
+          }
+          meeting.transcript = JSON.stringify(turns);
+        }
+      } catch (e) {
+        console.error("Fallback transcript translation failed:", e);
+      }
+
+      // Translate Summary
+      try {
+        meeting.summary = await translateTextFree(meeting.summary, language);
+      } catch (e) {
+        console.error("Fallback summary translation failed:", e);
+      }
+
+      // Translate Action Items
+      try {
+        for (const item of actionItems) {
+          if (item.task) {
+            item.task = await translateTextFree(item.task, language);
+          }
+        }
+      } catch (e) {
+        console.error("Fallback action items translation failed:", e);
+      }
+
+      // Translate Email
+      if (email) {
+        try {
+          email.subject = await translateTextFree(email.subject, language);
+          email.body = await translateTextFree(email.body, language);
+        } catch (e) {
+          console.error("Fallback email translation failed:", e);
+        }
+      }
+
+      // Save fallback results to db
+      actionItems.forEach((updatedItem: any) => {
+        const itemInDb = db.actionItems.find((a: any) => a.id === updatedItem.id);
+        if (itemInDb) {
+          itemInDb.task = updatedItem.task;
+        }
+      });
+
+      if (email) {
+        const emailInDb = db.emails.find((e: any) => e.meetingId === req.params.id);
+        if (emailInDb) {
+          emailInDb.subject = email.subject;
+          emailInDb.body = email.body;
+        }
+      }
+
+      meeting.language = language;
+      writeDb(db);
+    }
+
+    // Return the updated data
+    res.json({
+      ...meeting,
+      actionItems: db.actionItems.filter((a: any) => a.meetingId === req.params.id),
+      email: db.emails.find((e: any) => e.meetingId === req.params.id)
+    });
+  } catch (error: any) {
+    console.error("Translation route error:", error);
+    let errorMsg = "Failed to translate meeting details";
+    if (error.message) {
+      if (error.message.includes("quota") || error.message.includes("RESOURCE_EXHAUSTED") || error.message.includes("429")) {
+        const match = error.message.match(/Please retry in ([0-9.]+[a-zA-Z]+)/i);
+        const retryTime = match ? ` in ${match[1]}` : " in a few seconds";
+        errorMsg = `Gemini API Rate Limit: You exceeded your current API quota limit. Please retry${retryTime}.`;
+      } else {
+        errorMsg = error.message;
+      }
+    }
+    res.status(500).json({ error: errorMsg });
+  }
+});
+
+// DELETE /api/meetings/:id - Move a meeting to Recycle Bin
 app.delete("/api/meetings/:id", authenticateToken, (req: any, res) => {
+  const db = readDb();
+  const meeting = db.meetings.find((m: any) => m.id === req.params.id && m.userId === req.userId);
+  if (!meeting) {
+    return res.status(404).json({ error: "Meeting not found" });
+  }
+
+  meeting.deleted = true;
+  meeting.deletedAt = new Date().toISOString();
+  
+  writeDb(db);
+  res.json({ message: "Meeting moved to Recycle Bin", meeting });
+});
+
+// POST /api/meetings/:id/restore - Restore a meeting from Recycle Bin
+app.post("/api/meetings/:id/restore", authenticateToken, (req: any, res) => {
+  const db = readDb();
+  const meeting = db.meetings.find((m: any) => m.id === req.params.id && m.userId === req.userId);
+  if (!meeting) {
+    return res.status(404).json({ error: "Meeting not found" });
+  }
+
+  meeting.deleted = false;
+  delete meeting.deletedAt;
+
+  writeDb(db);
+  res.json({ message: "Meeting restored successfully", meeting });
+});
+
+// DELETE /api/meetings/:id/permanent - Permanently delete a meeting from database
+app.delete("/api/meetings/:id/permanent", authenticateToken, (req: any, res) => {
   const db = readDb();
   const meetingIndex = db.meetings.findIndex(
     (m: any) => m.id === req.params.id && m.userId === req.userId
@@ -500,7 +846,84 @@ app.delete("/api/meetings/:id", authenticateToken, (req: any, res) => {
   db.emails = db.emails.filter((e: any) => e.meetingId !== req.params.id);
 
   writeDb(db);
-  res.json({ message: "Meeting deleted successfully" });
+  res.json({ message: "Meeting permanently deleted successfully" });
+});
+
+// POST /api/meetings/empty-trash - Permanently delete all trashed meetings of logged-in user
+app.post("/api/meetings/empty-trash", authenticateToken, (req: any, res) => {
+  const db = readDb();
+  const userMeetingsToPermanentlyDelete = db.meetings.filter(
+    (m: any) => m.userId === req.userId && m.deleted
+  );
+  
+  const idsToDelete = userMeetingsToPermanentlyDelete.map((m: any) => m.id);
+
+  db.meetings = db.meetings.filter((m: any) => !(m.userId === req.userId && m.deleted));
+  db.actionItems = db.actionItems.filter((a: any) => !idsToDelete.includes(a.meetingId));
+  db.emails = db.emails.filter((e: any) => !idsToDelete.includes(e.meetingId));
+
+  writeDb(db);
+  res.json({ message: "Recycle Bin emptied successfully" });
+});
+
+// POST /api/meetings/bulk-delete - Move multiple meetings to Recycle Bin
+app.post("/api/meetings/bulk-delete", authenticateToken, (req: any, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids)) {
+    return res.status(400).json({ error: "Invalid meeting IDs" });
+  }
+
+  const db = readDb();
+  let count = 0;
+  db.meetings.forEach((m: any) => {
+    if (ids.includes(m.id) && m.userId === req.userId) {
+      m.deleted = true;
+      m.deletedAt = new Date().toISOString();
+      count++;
+    }
+  });
+
+  writeDb(db);
+  res.json({ message: `Successfully moved ${count} meetings to Recycle Bin` });
+});
+
+// POST /api/meetings/bulk-restore - Restore multiple meetings from Recycle Bin
+app.post("/api/meetings/bulk-restore", authenticateToken, (req: any, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids)) {
+    return res.status(400).json({ error: "Invalid meeting IDs" });
+  }
+
+  const db = readDb();
+  let count = 0;
+  db.meetings.forEach((m: any) => {
+    if (ids.includes(m.id) && m.userId === req.userId) {
+      m.deleted = false;
+      delete m.deletedAt;
+      count++;
+    }
+  });
+
+  writeDb(db);
+  res.json({ message: `Successfully restored ${count} meetings` });
+});
+
+// POST /api/meetings/bulk-permanent-delete - Permanently delete multiple meetings
+app.post("/api/meetings/bulk-permanent-delete", authenticateToken, (req: any, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids)) {
+    return res.status(400).json({ error: "Invalid meeting IDs" });
+  }
+
+  const db = readDb();
+  db.meetings = db.meetings.filter(
+    (m: any) => !(ids.includes(m.id) && m.userId === req.userId)
+  );
+  db.actionItems = db.actionItems.filter((a: any) => !ids.includes(a.meetingId));
+  db.emails = db.emails.filter((e: any) => !ids.includes(e.meetingId));
+
+  writeDb(db);
+  res.json({ message: "Successfully permanently deleted selected meetings" });
 });
 
 // POST /api/action-items/:id/toggle - Toggle action item status
@@ -531,20 +954,21 @@ app.get("/api/search", authenticateToken, async (req: any, res) => {
 
   try {
     const db = readDb();
-    const userMeetings = db.meetings.filter((m: any) => m.userId === req.userId);
+    const userMeetings = db.meetings.filter((m: any) => m.userId === req.userId && !m.deleted);
 
     if (userMeetings.length === 0) {
       return res.json([]);
     }
 
     let geminiAvailable = false;
+    const customApiKey = req.headers["x-gemini-key"] as string | undefined;
     try {
-      getGeminiClient();
+      getGeminiClient(customApiKey);
       geminiAvailable = true;
     } catch (e) {}
 
     if (geminiAvailable) {
-      const ai = getGeminiClient();
+      const ai = getGeminiClient(customApiKey);
       const meetingsMeta = userMeetings.map((m: any) => ({
         id: m.id,
         title: m.title,
@@ -631,7 +1055,7 @@ app.get("/api/search", authenticateToken, async (req: any, res) => {
 // GET /api/analytics - Get computed dashboard stats
 app.get("/api/analytics", authenticateToken, (req: any, res) => {
   const db = readDb();
-  const userMeetings = db.meetings.filter((m: any) => m.userId === req.userId);
+  const userMeetings = db.meetings.filter((m: any) => m.userId === req.userId && !m.deleted);
   const userMeetingIds = userMeetings.map((m: any) => m.id);
   const userActionItems = db.actionItems.filter((a: any) => userMeetingIds.includes(a.meetingId));
 

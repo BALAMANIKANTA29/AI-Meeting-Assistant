@@ -30,7 +30,9 @@ export default function SearchView({ token, onSelectMeeting }: SearchViewProps) 
 
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
       const data = await res.json();
       if (!res.ok) {
