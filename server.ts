@@ -54,11 +54,22 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Database initialization & functions
-const DB_FILE = path.join(process.cwd(), "db.json");
+const isVercel = process.env.VERCEL === "1" || !!process.env.VERCEL;
+const DB_FILE = isVercel
+  ? path.join("/tmp", "db.json")
+  : path.join(process.cwd(), "db.json");
 
 function initDb() {
   if (!fs.existsSync(DB_FILE)) {
+    const seedPath = path.join(process.cwd(), "db.json");
+    if (isVercel && fs.existsSync(seedPath)) {
+      try {
+        fs.copyFileSync(seedPath, DB_FILE);
+        return;
+      } catch (e) {
+        console.error("Failed to copy seed db.json to /tmp:", e);
+      }
+    }
     fs.writeFileSync(
       DB_FILE,
       JSON.stringify({ users: [], meetings: [], actionItems: [], emails: [] }, null, 2)
@@ -1105,6 +1116,8 @@ app.get("/api/analytics", authenticateToken, (req: any, res) => {
 
 /* ==================== VITE SERVER & PRODUCTION SERVING ==================== */
 
+export default app;
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -1125,4 +1138,6 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
