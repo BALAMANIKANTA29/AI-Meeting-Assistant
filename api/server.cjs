@@ -412,7 +412,7 @@ Respond ONLY with raw valid JSON. Do not include markdown code block formatting 
     let actionItems = [];
     let emailObj = { subject: "", body: "" };
     if (geminiAvailable) {
-      const ai = getGeminiClient();
+      const ai = getGeminiClient(customApiKey);
       const transcriptFormatted = transcriptObj.map((t) => `${t.speaker} [${t.timestamp}]: ${t.text}`).join("\n");
       try {
         const sumRes = await ai.models.generateContent({
