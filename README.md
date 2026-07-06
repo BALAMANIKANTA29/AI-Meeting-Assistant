@@ -1,4 +1,4 @@
-﻿# AI Meeting Assistant
+# AI Meeting Assistant
 
 AI Meeting Assistant is a full-stack web app that helps users manage, search, and analyze meeting recordings and transcripts. It combines a React-based dashboard with an Express backend and AI-powered summarization features so teams can quickly review important decisions, action items, and insights from meetings.
 
@@ -47,6 +47,22 @@ AI Meeting Assistant is a full-stack web app that helps users manage, search, an
 - `npm run build` - build the production bundle
 - `npm run start` - start the built server
 - `npm run lint` - run TypeScript checks
+
+## Deployment on Vercel
+
+This app is configured for deployment on Vercel. 
+
+### Environment Variables Config
+
+Since Vercel serverless functions do not load the local `.env` file, you must configure the Gemini API key in the Vercel Dashboard:
+
+1. Go to your project on the [Vercel Dashboard](https://vercel.com).
+2. Navigate to **Settings** > **Environment Variables**.
+3. Add a new variable:
+   - **Key**: `GEMINI_API_KEY`
+   - **Value**: `your_gemini_api_key`
+4. Click **Save**.
+5. Go to the **Deployments** tab and trigger a **Redeploy** (or push a new Git commit) for the environment variables to take effect.
 
 ## Notes
 
