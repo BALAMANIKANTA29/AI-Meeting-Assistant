@@ -60,13 +60,14 @@ interface UploadViewProps {
 }
 
 export default function UploadView({ token, onSuccess, onNavigate }: UploadViewProps) {
-  const [activeTab, setActiveTab] = useState<"upload" | "record" | "presets">("presets");
+  const [activeTab, setActiveTab] = useState<"upload" | "record" | "presets" | "manual">("presets");
   
   // Custom Meeting States
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("Engineering");
   const [topic, setTopic] = useState("");
   const [language, setLanguage] = useState("English");
+  const [manualNotes, setManualNotes] = useState("");
   
   // File Upload State
   const [dragActive, setDragActive] = useState(false);
@@ -331,6 +332,19 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
           audioData: base64Audio,
           language: language,
         };
+      } else if (activeTab === "manual") {
+        if (!manualNotes || manualNotes.trim().length === 0) {
+          throw new Error("Please type or paste your meeting notes or raw transcript before analyzing.");
+        }
+
+        payload = {
+          title: title || "Manual Notes Session",
+          category: category,
+          duration: 180,
+          topic: topic || "Manually entered meeting discussion notes.",
+          manualNotes: manualNotes,
+          language: language,
+        };
       } else {
         // Upload Tab
         if (!uploadedFile) {
@@ -416,10 +430,6 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
               <p className="text-zinc-500 text-sm font-medium animate-pulse">
                 {loadingMessage}
               </p>
-              <p className="text-zinc-400 text-xs mt-6 px-4 py-2 bg-zinc-50 rounded-lg inline-flex items-center gap-1.5">
-                <Info className="h-3 w-3 text-zinc-400" />
-                This is a fully-automated multi-stage Gemini 3.5 task sequence.
-              </p>
             </div>
           </motion.div>
         ) : (
@@ -447,7 +457,7 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
             )}
 
             {/* Tab selection */}
-            <div className="flex bg-zinc-100/80 p-1 rounded-lg w-full max-w-lg">
+            <div className="flex bg-zinc-100/80 p-1 rounded-lg w-full max-w-xl">
               <button
                 id="preset_tab_btn"
                 onClick={() => setActiveTab("presets")}
@@ -480,6 +490,17 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
                 }`}
               >
                 Upload File
+              </button>
+              <button
+                id="manual_tab_btn"
+                onClick={() => setActiveTab("manual")}
+                className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${
+                  activeTab === "manual"
+                    ? "bg-white text-zinc-950 shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-800"
+                }`}
+              >
+                Manual Entry
               </button>
             </div>
 
@@ -799,6 +820,181 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* TAB CONTENT: MANUAL ENTRY */}
+            {activeTab === "manual" && (
+              <div className="space-y-6">
+                <div className="bg-white border border-zinc-200 rounded-xl p-6 meeting-card-shadow space-y-5">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-900 uppercase tracking-wider mb-1 flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-zinc-700" />
+                      Type or Paste Meeting Notes
+                    </h3>
+                    <p className="text-xs text-zinc-500">
+                      Enter raw meeting minutes, discussion points, or transcripts manually. AI will generate executive summaries, point-to-point notes, action items, and follow-up emails.
+                    </p>
+                  </div>
+
+                  {/* Sample Note Quick Fillers */}
+                  <div className="bg-zinc-50 border border-zinc-200/80 rounded-lg p-3">
+                    <span className="text-[11px] font-semibold text-zinc-600 block mb-2 font-mono uppercase">
+                      Quick Sample Note Presets:
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTitle("Sprint Planning & Frontend Layouts");
+                          setCategory("Engineering");
+                          setTopic("Reviewing component architecture and database indexes");
+                          setManualNotes(
+                            "Speaker A (Product): Welcome everyone. Today we need to align on the sprint goals for the AI Meeting Assistant.\n" +
+                            "Speaker B (Frontend): I finished the responsive sidebar and meeting details view. Ramana is polishing the CSS styling.\n" +
+                            "Speaker C (Backend): Gowtham completed the database index optimization for Neon. Search queries are under 50ms now.\n" +
+                            "Action Points: Ramana to finalize theme toggle by tomorrow. Gowtham to document DB schemas by Friday. Next sync on Monday."
+                          );
+                        }}
+                        className="text-xs bg-white hover:bg-zinc-100 border border-zinc-200 px-3 py-1.5 rounded-md text-zinc-800 font-medium transition-colors cursor-pointer"
+                      >
+                        Sprint Planning Notes
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTitle("Product Launch & Marketing Campaign");
+                          setCategory("Marketing");
+                          setTopic("Go-to-market timeline and email outreach");
+                          setManualNotes(
+                            "Meeting Lead: Discussed the upcoming product launch campaign.\n" +
+                            "- Launch date targeted for next month.\n" +
+                            "- Pricing tiers: Free Tier and Pro Subscription.\n" +
+                            "- Email outreach campaign targeting 5,000 beta signups.\n" +
+                            "Decisions Made: Approved launch collateral and social media banners.\n" +
+                            "Next Steps: Marketing team to draft announcement blog post by Thursday."
+                          );
+                        }}
+                        className="text-xs bg-white hover:bg-zinc-100 border border-zinc-200 px-3 py-1.5 rounded-md text-zinc-800 font-medium transition-colors cursor-pointer"
+                      >
+                        Marketing Strategy Notes
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualNotes("");
+                          setTitle("");
+                          setTopic("");
+                        }}
+                        className="text-xs text-zinc-400 hover:text-zinc-700 underline px-2 py-1.5 transition-colors cursor-pointer"
+                      >
+                        Clear Notes
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Manual Notes Textarea */}
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-700 mb-1.5" htmlFor="manual_notes_input">
+                      Meeting Content / Raw Notes <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      id="manual_notes_input"
+                      rows={8}
+                      value={manualNotes}
+                      onChange={(e) => setManualNotes(e.target.value)}
+                      placeholder="Type or paste your meeting notes, raw transcript, bullet points, or discussion summary here..."
+                      className="block w-full px-3.5 py-3 border border-zinc-200 rounded-lg text-sm bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 transition-colors font-sans leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Metadata Fields */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 mb-1.5" htmlFor="manual_title">
+                        Meeting Title
+                      </label>
+                      <input
+                        id="manual_title"
+                        type="text"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        placeholder="e.g. Q3 Roadmap Review"
+                        className="block w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 transition-colors"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 mb-1.5" htmlFor="manual_category">
+                        Department Category
+                      </label>
+                      <select
+                        id="manual_category"
+                        value={category}
+                        onChange={(e) => setCategory(e.target.value)}
+                        className="block w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 transition-colors"
+                      >
+                        <option>Engineering</option>
+                        <option>Product Planning</option>
+                        <option>Infrastructure</option>
+                        <option>Marketing</option>
+                        <option>General</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-zinc-700 mb-1.5" htmlFor="manual_language">
+                        Output Language
+                      </label>
+                      <select
+                        id="manual_language"
+                        value={language}
+                        onChange={(e) => setLanguage(e.target.value)}
+                        className="block w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 transition-colors"
+                      >
+                        <option>English</option>
+                        <option>Spanish</option>
+                        <option>French</option>
+                        <option>German</option>
+                        <option>Hindi</option>
+                        <option>Telugu</option>
+                        <option>Tamil</option>
+                        <option>Kannada</option>
+                        <option>Japanese</option>
+                        <option>Chinese</option>
+                        <option>Portuguese</option>
+                      </select>
+                    </div>
+
+                    <div className="md:col-span-3">
+                      <label className="block text-xs font-semibold text-zinc-700 mb-1.5" htmlFor="manual_topic">
+                        Meeting Agenda & Context (Optional)
+                      </label>
+                      <input
+                        id="manual_topic"
+                        type="text"
+                        value={topic}
+                        onChange={(e) => setTopic(e.target.value)}
+                        placeholder="Agenda details or key discussion context."
+                        className="block w-full px-3 py-2 border border-zinc-200 rounded-lg text-sm bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Analyze Button */}
+                  <div className="pt-3 flex justify-end">
+                    <button
+                      id="analyze_manual_notes_btn"
+                      onClick={() => handleAnalyze()}
+                      className="w-full md:w-auto bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-semibold px-6 py-3 rounded-lg shadow-md flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <Sparkles className="h-4 w-4 text-amber-500" />
+                      Analyze Manual Notes
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </motion.div>

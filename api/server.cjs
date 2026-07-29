@@ -258,7 +258,7 @@ app.get("/api/me", authenticateToken, (req, res) => {
   res.json({ id: user.id, name: user.name, email: user.email, createdAt: user.createdAt });
 });
 app.post("/api/upload", authenticateToken, async (req, res) => {
-  const { title, duration, category, topic, presetId, audioData, language } = req.body;
+  const { title, duration, category, topic, presetId, audioData, language, manualNotes } = req.body;
   const finalTitle = title || "Untitled Meeting";
   const finalCategory = category || "General";
   const finalDuration = duration ? parseInt(duration, 10) : 120;
@@ -276,7 +276,53 @@ app.post("/api/upload", authenticateToken, async (req, res) => {
     }
     if (geminiAvailable) {
       const ai = getGeminiClient(customApiKey);
-      if (audioData) {
+      if (manualNotes && manualNotes.trim().length > 0) {
+        try {
+          const response = await ai.models.generateContent({
+            model: "gemini-3.5-flash",
+            contents: `Process and organize the following manually entered meeting notes or raw meeting transcript into a structured, chronological speaker turn or point-by-point breakdown.
+Translate and format the notes into the target language: "${finalLanguage}".
+Organize the content into logical sections or speaker turns (if speakers are identified in the notes, use their names, otherwise use "Notes / Speaker A", "Notes / Speaker B", etc.).
+Format each section's content as clear, detailed bullet points (using '-' for bullets).
+Assign appropriate timestamps based on topic progression (e.g. "00:00", "01:30").
+
+Manual Notes / Transcript Input:
+${manualNotes}
+
+Return the output strictly as a JSON array of objects with "speaker", "text", and "timestamp" fields.
+Example output format:
+[
+  {
+    "speaker": "Meeting Notes",
+    "text": "- Discussed quarterly goal progress.\\n- Agreed on key feature milestones.",
+    "timestamp": "00:00"
+  }
+]
+Respond ONLY with raw valid JSON. Do not include markdown code block formatting or backticks.`,
+            config: {
+              responseMimeType: "application/json"
+            }
+          });
+          if (response.text) {
+            const cleanText = response.text.trim();
+            const parsed = JSON.parse(cleanText);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              transcriptObj = parsed.map((turn) => ({
+                speaker: turn.speaker || "Meeting Notes",
+                text: turn.text || "",
+                timestamp: turn.timestamp || "00:00"
+              }));
+            }
+          }
+        } catch (manualErr) {
+          console.warn("Manual notes AI structuring failed, using raw notes fallback:", manualErr);
+          transcriptObj = [{
+            speaker: "Manual Notes",
+            text: manualNotes,
+            timestamp: "00:00"
+          }];
+        }
+      } else if (audioData) {
         const base64Data = audioData.includes(",") ? audioData.split(",")[1] : audioData;
         const mimeType = audioData.includes(";") ? audioData.split(";")[0].split(":")[1] : "audio/webm";
         try {
@@ -388,7 +434,17 @@ Respond ONLY with raw valid JSON. Do not include markdown code block formatting 
       }
     }
     if (transcriptObj.length === 0) {
-      if (audioData) {
+      if (manualNotes && manualNotes.trim().length > 0) {
+        const lines = manualNotes.split("\n").filter((l) => l.trim().length > 0);
+        const bulletText = lines.map((l) => l.trim().startsWith("-") || l.trim().startsWith("*") ? l.trim() : `- ${l.trim()}`).join("\n");
+        transcriptObj = [
+          {
+            speaker: "Manual Notes",
+            text: bulletText,
+            timestamp: "00:00"
+          }
+        ];
+      } else if (audioData) {
         transcriptObj = [
           {
             speaker: "Transcript",
