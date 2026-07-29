@@ -17,6 +17,26 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (!isLogin) {
+      if (password.length < 6) {
+        setError("Password must be at least 6 characters long.");
+        return;
+      }
+      if (!/[A-Z]/.test(password)) {
+        setError("Password must contain at least one uppercase letter (A-Z).");
+        return;
+      }
+      if (!/[a-z]/.test(password)) {
+        setError("Password must contain at least one lowercase letter (a-z).");
+        return;
+      }
+      if (!/[0-9]/.test(password)) {
+        setError("Password must contain at least one number (0-9).");
+        return;
+      }
+    }
+
     setLoading(true);
 
     const endpoint = isLogin ? "/api/login" : "/api/register";
@@ -190,6 +210,27 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
                 placeholder="••••••••"
               />
             </div>
+            {!isLogin && (
+              <div className="mt-2 text-[11px] space-y-1 bg-zinc-50 border border-zinc-200/80 p-2.5 rounded-lg">
+                <span className="font-medium text-zinc-600 block mb-1 font-mono uppercase text-[10px]">
+                  Password Requirements:
+                </span>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                  <span className={`flex items-center gap-1 font-medium ${password.length >= 6 ? "text-emerald-600" : "text-zinc-400"}`}>
+                    {password.length >= 6 ? "✓" : "•"} 6+ characters
+                  </span>
+                  <span className={`flex items-center gap-1 font-medium ${/[A-Z]/.test(password) ? "text-emerald-600" : "text-zinc-400"}`}>
+                    {/[A-Z]/.test(password) ? "✓" : "•"} 1 Uppercase (A-Z)
+                  </span>
+                  <span className={`flex items-center gap-1 font-medium ${/[a-z]/.test(password) ? "text-emerald-600" : "text-zinc-400"}`}>
+                    {/[a-z]/.test(password) ? "✓" : "•"} 1 Lowercase (a-z)
+                  </span>
+                  <span className={`flex items-center gap-1 font-medium ${/[0-9]/.test(password) ? "text-emerald-600" : "text-zinc-400"}`}>
+                    {/[0-9]/.test(password) ? "✓" : "•"} 1 Number (0-9)
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           <button

@@ -207,6 +207,18 @@ app.post("/api/register", (req, res) => {
   if (!name || !name.trim() || !email || !email.trim() || !password) {
     return res.status(400).json({ error: "Name, email, and password are required" });
   }
+  if (password.length < 6) {
+    return res.status(400).json({ error: "Password must be at least 6 characters long." });
+  }
+  if (!/[A-Z]/.test(password)) {
+    return res.status(400).json({ error: "Password must contain at least one uppercase letter (A-Z)." });
+  }
+  if (!/[a-z]/.test(password)) {
+    return res.status(400).json({ error: "Password must contain at least one lowercase letter (a-z)." });
+  }
+  if (!/[0-9]/.test(password)) {
+    return res.status(400).json({ error: "Password must contain at least one number (0-9)." });
+  }
   const cleanEmail = email.trim().toLowerCase();
   const cleanName = name.trim();
   const db = readDb();
