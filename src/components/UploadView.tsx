@@ -512,7 +512,7 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
                     Available Simulation Presets
                   </h3>
                   <p className="text-xs text-zinc-500 mb-4">
-                    Instantly simulate detailed team meetings. Ideal for inspecting how Gemini analyzes diverse agendas.
+                    Instantly simulate detailed team meetings. Ideal for inspecting how AI analyzes diverse agendas.
                   </p>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -543,7 +543,7 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
                         
                         <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center gap-1 text-xs text-zinc-600 font-semibold group-hover:text-zinc-950 transition-colors">
                           <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-                          Simulate & Analyze with Gemini
+                          Simulate & Analyze Meeting
                         </div>
                       </div>
                     ))}
