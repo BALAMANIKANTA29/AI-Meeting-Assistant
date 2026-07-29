@@ -55,7 +55,7 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
       >
         <div className="flex flex-col items-center mb-8">
           <img
-            src="/logo.jpg"
+            src="/logo.png"
             alt="Zero Trust Logo"
             className="h-12 w-12 rounded-xl object-contain mb-3 shadow-md border border-zinc-100 bg-white"
           />

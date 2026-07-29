@@ -217,7 +217,7 @@ export default function App() {
           {/* Logo heading */}
           <div className="p-6 flex items-center gap-2.5 border-b border-zinc-100">
             <img
-              src="/logo.jpg"
+              src="/logo.png"
               alt="Zero Trust Logo"
               className="h-9 w-9 rounded-lg object-contain shadow-sm border border-zinc-100 bg-white"
             />
