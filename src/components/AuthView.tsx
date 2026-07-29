@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion } from "motion/react";
-import { Mic, ArrowRight, Sparkles, User as UserIcon, Mail, Lock } from "lucide-react";
+import { Mic, ArrowRight, Sparkles, User as UserIcon, Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 interface AuthViewProps {
   onSuccess: (token: string, user: { id: string; name: string; email: string }) => void;
@@ -11,8 +11,16 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Password requirement checks
+  const hasMinLength = password.length >= 6;
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasLowercase = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const allConstraintsMet = hasMinLength && hasUppercase && hasLowercase && hasNumber;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,32 +210,52 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
               </div>
               <input
                 id="auth_password"
-                type="password"
+                type={showPassword ? "text" : "password"}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="block w-full pl-9 pr-3 py-2 border border-zinc-200 rounded-lg text-sm bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 transition-colors"
+                className="block w-full pl-9 pr-10 py-2 border border-zinc-200 rounded-lg text-sm bg-zinc-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-950 focus:border-zinc-950 transition-colors"
                 placeholder="••••••••"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
+                title={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
-            {!isLogin && (
-              <div className="mt-2 text-[11px] space-y-1 bg-zinc-50 border border-zinc-200/80 p-2.5 rounded-lg">
-                <span className="font-medium text-zinc-600 block mb-1 font-mono uppercase text-[10px]">
-                  Password Requirements:
+            {!isLogin && !allConstraintsMet && (
+              <div className="mt-2 text-[11px] space-y-1.5 bg-amber-50/70 border border-amber-200/80 p-2.5 rounded-lg text-amber-900">
+                <span className="font-semibold block font-mono uppercase text-[10px] text-amber-800">
+                  Password Requirements (Satisfied items will disappear):
                 </span>
-                <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-                  <span className={`flex items-center gap-1 font-medium ${password.length >= 6 ? "text-emerald-600" : "text-zinc-400"}`}>
-                    {password.length >= 6 ? "✓" : "•"} 6+ characters
-                  </span>
-                  <span className={`flex items-center gap-1 font-medium ${/[A-Z]/.test(password) ? "text-emerald-600" : "text-zinc-400"}`}>
-                    {/[A-Z]/.test(password) ? "✓" : "•"} 1 Uppercase (A-Z)
-                  </span>
-                  <span className={`flex items-center gap-1 font-medium ${/[a-z]/.test(password) ? "text-emerald-600" : "text-zinc-400"}`}>
-                    {/[a-z]/.test(password) ? "✓" : "•"} 1 Lowercase (a-z)
-                  </span>
-                  <span className={`flex items-center gap-1 font-medium ${/[0-9]/.test(password) ? "text-emerald-600" : "text-zinc-400"}`}>
-                    {/[0-9]/.test(password) ? "✓" : "•"} 1 Number (0-9)
-                  </span>
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1 pt-0.5">
+                  {!hasMinLength && (
+                    <span className="flex items-center gap-1 font-medium text-amber-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+                      6+ characters
+                    </span>
+                  )}
+                  {!hasUppercase && (
+                    <span className="flex items-center gap-1 font-medium text-amber-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+                      1 Uppercase (A-Z)
+                    </span>
+                  )}
+                  {!hasLowercase && (
+                    <span className="flex items-center gap-1 font-medium text-amber-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+                      1 Lowercase (a-z)
+                    </span>
+                  )}
+                  {!hasNumber && (
+                    <span className="flex items-center gap-1 font-medium text-amber-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+                      1 Number (0-9)
+                    </span>
+                  )}
                 </div>
               </div>
             )}
