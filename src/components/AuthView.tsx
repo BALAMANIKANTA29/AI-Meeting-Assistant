@@ -202,13 +202,6 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
             )}
           </button>
         </form>
-
-        <div className="mt-6 pt-6 border-t border-zinc-100 text-center">
-          <p className="text-zinc-400 text-xs flex items-center justify-center gap-1">
-            <Sparkles className="h-3 w-3 text-amber-500" />
-            Powered by server-side Gemini 3.5 Flash
-          </p>
-        </div>
       </motion.div>
     </div>
   );
