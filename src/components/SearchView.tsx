@@ -98,8 +98,8 @@ export default function SearchView({ token, onSelectMeeting }: SearchViewProps) 
               disabled={loading}
               className="bg-zinc-950 hover:bg-zinc-800 disabled:bg-zinc-200 text-white text-xs font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-              Ask Gemini
+              <Search className="h-3.5 w-3.5" />
+              Search
             </button>
           </div>
         </div>

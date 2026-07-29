@@ -283,6 +283,38 @@ app.post("/api/login", (req, res) => {
   });
 });
 
+// POST /api/social-login
+app.post("/api/social-login", (req, res) => {
+  const { provider, email, name } = req.body;
+  const providerName = provider === "Microsoft" ? "Microsoft" : "Google";
+  const userEmail = email && email.trim() ? email.trim().toLowerCase() : `${providerName.toLowerCase()}.user@gmail.com`;
+  const userName = name && name.trim() ? name.trim() : `${providerName} User`;
+
+  const db = readDb();
+  let user = db.users.find((u: any) => u.email.toLowerCase() === userEmail);
+
+  if (!user) {
+    const salt = crypto.randomBytes(16).toString("hex");
+    const hashedPassword = crypto.createHmac("sha256", salt).update("SocialAuthPassword123").digest("hex");
+    user = {
+      id: crypto.randomUUID(),
+      name: userName,
+      email: userEmail,
+      passwordHash: hashedPassword,
+      salt,
+      createdAt: new Date().toISOString(),
+    };
+    db.users.push(user);
+    writeDb(db);
+  }
+
+  const token = generateToken(user.id);
+  res.json({
+    token,
+    user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt },
+  });
+});
+
 // GET /api/me
 app.get("/api/me", authenticateToken, (req: any, res) => {
   const db = readDb();
@@ -640,7 +672,8 @@ Respond ONLY with raw valid JSON. Do not include markdown code block formatting 
       language: finalLanguage || "English",
     };
 
-    db.meetings.push(newMeeting);
+    // Store at the top (newest / most recently updated)
+    db.meetings.unshift(newMeeting);
 
     // Save action items
     actionItems.forEach((item: any) => {
@@ -671,10 +704,24 @@ Respond ONLY with raw valid JSON. Do not include markdown code block formatting 
   }
 });
 
-// GET /api/meetings - List meetings of logged-in user
+// GET /api/public/latest-meeting - Returns the most recently updated/created meeting
+app.get("/api/public/latest-meeting", (req, res) => {
+  const db = readDb();
+  const validMeetings = db.meetings.filter((m: any) => !m.deleted);
+  if (validMeetings.length === 0) {
+    return res.json(null);
+  }
+  const latest = [...validMeetings].sort((a: any, b: any) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
+  const actionItems = db.actionItems.filter((a: any) => a.meetingId === latest.id);
+  res.json({ ...latest, actionItems });
+});
+
+// GET /api/meetings - List meetings of logged-in user (newest first)
 app.get("/api/meetings", authenticateToken, (req: any, res) => {
   const db = readDb();
-  const userMeetings = db.meetings.filter((m: any) => m.userId === req.userId && !m.deleted);
+  const userMeetings = db.meetings
+    .filter((m: any) => m.userId === req.userId && !m.deleted)
+    .sort((a: any, b: any) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
   res.json(userMeetings);
 });
 
@@ -924,6 +971,25 @@ app.post("/api/meetings/:id/restore", authenticateToken, (req: any, res) => {
 
   writeDb(db);
   res.json({ message: "Meeting restored successfully", meeting });
+});
+
+// PUT /api/meetings/:id - Update an existing meeting
+app.put("/api/meetings/:id", authenticateToken, (req: any, res) => {
+  const db = readDb();
+  const meeting = db.meetings.find((m: any) => m.id === req.params.id && m.userId === req.userId);
+  if (!meeting) {
+    return res.status(404).json({ error: "Meeting not found" });
+  }
+
+  const { title, summary, transcript, category } = req.body;
+  if (title !== undefined) meeting.title = title;
+  if (summary !== undefined) meeting.summary = summary;
+  if (transcript !== undefined) meeting.transcript = typeof transcript === "string" ? transcript : JSON.stringify(transcript);
+  if (category !== undefined) meeting.category = category;
+  meeting.date = new Date().toISOString(); // Update timestamp to place at top of recent meetings
+
+  writeDb(db);
+  res.json(meeting);
 });
 
 // DELETE /api/meetings/:id/permanent - Permanently delete a meeting from database

@@ -226,7 +226,7 @@ export default function App() {
                 Meeting Assistant
               </span>
               <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide flex items-center gap-0.5 mt-0.5">
-                <Sparkles className="h-3 w-3 animate-pulse" /> powered by Zero Trust
+                <Sparkles className="h-3 w-3 animate-pulse" /> powered by AI
               </span>
             </div>
           </div>
