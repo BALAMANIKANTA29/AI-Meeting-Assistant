@@ -211,13 +211,16 @@ const PRESETS = {
 // POST /api/register
 app.post("/api/register", (req, res) => {
   const { name, email, password } = req.body;
-  if (!name || !email || !password) {
+  if (!name || !name.trim() || !email || !email.trim() || !password) {
     return res.status(400).json({ error: "Name, email, and password are required" });
   }
 
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanName = name.trim();
+
   const db = readDb();
-  if (db.users.find((u: any) => u.email.toLowerCase() === email.toLowerCase())) {
-    return res.status(400).json({ error: "Email already registered" });
+  if (db.users.some((u: any) => u.email && u.email.trim().toLowerCase() === cleanEmail)) {
+    return res.status(400).json({ error: "An account with this email address already exists. Please sign in instead." });
   }
 
   const salt = crypto.randomBytes(16).toString("hex");
@@ -225,8 +228,8 @@ app.post("/api/register", (req, res) => {
 
   const newUser = {
     id: crypto.randomUUID(),
-    name,
-    email: email.toLowerCase(),
+    name: cleanName,
+    email: cleanEmail,
     passwordHash: hashedPassword,
     salt,
     createdAt: new Date().toISOString(),

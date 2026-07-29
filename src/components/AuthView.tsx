@@ -111,9 +111,21 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
           <motion.div
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-4 p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-xs font-medium"
+            className="mb-4 p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-xs font-medium flex flex-col gap-1.5"
           >
-            {error}
+            <span>{error}</span>
+            {error.toLowerCase().includes("already") && !isLogin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLogin(true);
+                  setError(null);
+                }}
+                className="text-xs font-semibold text-red-700 underline text-left hover:text-red-900 cursor-pointer"
+              >
+                Switch to Sign In →
+              </button>
+            )}
           </motion.div>
         )}
 
