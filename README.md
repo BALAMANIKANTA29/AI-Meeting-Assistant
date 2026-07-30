@@ -114,6 +114,3 @@ This repository is configured for serverless deployment on Vercel using `vercel.
 
 ---
 
-## 📄 License
-
-This project is open source and available under the [MIT License](LICENSE).
