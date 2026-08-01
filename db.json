@@ -79,6 +79,14 @@
       "passwordHash": "1bb7aa1f94998b5b05653448ebce7c7742e434213f532754b1b675454bc6d978",
       "salt": "5514bed8a58dceb8f1484b6d87d9a716",
       "createdAt": "2026-08-01T07:09:08.550Z"
+    },
+    {
+      "id": "b66fa4bf-7759-4ebc-bacf-774711f4b569",
+      "name": "Test Persistence User",
+      "email": "test_user_1785579641352@example.com",
+      "passwordHash": "397b9605f318bd6ff5521b2a92c44cbadec0ba6e2d3ef77c4d183a2580224554",
+      "salt": "057649d3c069b3e3bed1ca83e809cc14",
+      "createdAt": "2026-08-01T10:20:41.353Z"
     }
   ],
   "meetings": [

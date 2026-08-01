@@ -225,56 +225,7 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
       }
 
       if (!response.ok) {
-        if (mode === "login") {
-          try {
-            const localAccounts = JSON.parse(localStorage.getItem("meeting_local_accounts") || "[]");
-            const cleanE = email.trim().toLowerCase();
-            const matchedLocal = localAccounts.find(
-              (acc: any) => acc.email.toLowerCase() === cleanE && acc.password === password
-            );
-            if (matchedLocal) {
-              const regRes = await fetch("/api/register", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: matchedLocal.name, email: matchedLocal.email, password: matchedLocal.password }),
-              });
-              if (regRes.ok) {
-                const regData = await regRes.json();
-                clearInterval(pInterval);
-                setSubmitProgress(100);
-                setTimeout(() => {
-                  setLoading(false);
-                  setSubmitSuccess(true);
-                  showToast("Authenticated successfully! Redirecting...", "success");
-                  setTimeout(() => {
-                    onSuccess(regData.token, regData.user);
-                  }, 1200);
-                }, 400);
-                return;
-              }
-            }
-          } catch (e) {
-            console.error("Local account sync error:", e);
-          }
-        }
         throw new Error(data.error || "Authentication failed");
-      }
-
-      if (mode === "register") {
-        try {
-          const localAccounts = JSON.parse(localStorage.getItem("meeting_local_accounts") || "[]");
-          const cleanE = email.trim().toLowerCase();
-          const existingIdx = localAccounts.findIndex((acc: any) => acc.email.toLowerCase() === cleanE);
-          const newAcc = { name: name.trim(), email: cleanE, password };
-          if (existingIdx >= 0) {
-            localAccounts[existingIdx] = newAcc;
-          } else {
-            localAccounts.push(newAcc);
-          }
-          localStorage.setItem("meeting_local_accounts", JSON.stringify(localAccounts));
-        } catch (e) {
-          console.error("Failed to save local account backup:", e);
-        }
       }
 
       clearInterval(pInterval);

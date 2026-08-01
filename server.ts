@@ -93,27 +93,39 @@ let inMemoryDb: any = null;
 function readDb() {
   initDb();
   try {
-    const data = fs.readFileSync(DB_FILE, "utf8");
-    const parsed = JSON.parse(data);
-    if (!parsed.users) parsed.users = [];
-    if (!parsed.meetings) parsed.meetings = [];
-    if (!parsed.actionItems) parsed.actionItems = [];
-    if (!parsed.emails) parsed.emails = [];
-    inMemoryDb = parsed;
-    return parsed;
+    if (fs.existsSync(DB_FILE)) {
+      const data = fs.readFileSync(DB_FILE, "utf8");
+      if (data && data.trim()) {
+        const parsed = JSON.parse(data);
+        if (!parsed.users) parsed.users = [];
+        if (!parsed.meetings) parsed.meetings = [];
+        if (!parsed.actionItems) parsed.actionItems = [];
+        if (!parsed.emails) parsed.emails = [];
+        inMemoryDb = parsed;
+        return parsed;
+      }
+    }
   } catch (e) {
-    if (inMemoryDb) return inMemoryDb;
-    inMemoryDb = { users: [], meetings: [], actionItems: [], emails: [] };
-    return inMemoryDb;
+    console.error("Error reading DB file:", e);
   }
+  if (inMemoryDb) return inMemoryDb;
+  inMemoryDb = { users: [], meetings: [], actionItems: [], emails: [] };
+  return inMemoryDb;
 }
 
 function writeDb(data: any) {
   inMemoryDb = data;
   try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+    const tempPath = `${DB_FILE}.tmp.${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf8");
+    fs.renameSync(tempPath, DB_FILE);
   } catch (e) {
-    console.error("Failed to persist database to file:", e);
+    console.error("Failed to persist database atomically, attempting direct write:", e);
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
+    } catch (err) {
+      console.error("Direct write fallback failed:", err);
+    }
   }
 }
 
@@ -149,10 +161,26 @@ function verifyToken(token: string): string | null {
   }
 }
 
+function setAuthCookie(res: any, token: string) {
+  res.setHeader("Set-Cookie", `meeting_auth_token=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800`);
+}
+
 // Authentication Middleware
 function authenticateToken(req: any, res: any, next: any) {
+  let token: string | null = null;
+
   const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.split(" ")[1];
+  }
+
+  if (!token && req.headers.cookie) {
+    const cookieMatch = req.headers.cookie.match(/meeting_auth_token=([^;]+)/);
+    if (cookieMatch) {
+      token = cookieMatch[1];
+    }
+  }
+
   if (!token) {
     return res.status(401).json({ error: "Access token required" });
   }
@@ -258,6 +286,7 @@ app.post("/api/register", (req, res) => {
   writeDb(db);
 
   const token = generateToken(newUser.id);
+  setAuthCookie(res, token);
   res.status(201).json({
     token,
     user: { id: newUser.id, name: newUser.name, email: newUser.email, createdAt: newUser.createdAt },
@@ -271,18 +300,23 @@ app.post("/api/login", (req, res) => {
     return res.status(400).json({ error: "Email and password are required" });
   }
 
+  const cleanEmail = email.trim().toLowerCase();
   const db = readDb();
-  const user = db.users.find((u: any) => u.email.toLowerCase() === email.toLowerCase());
-  if (!user) {
+  const user = db.users.find((u: any) => u.email && u.email.trim().toLowerCase() === cleanEmail);
+  if (!user || !user.passwordHash || !user.salt) {
     return res.status(400).json({ error: "Invalid email or password" });
   }
 
   const hashedPassword = crypto.createHmac("sha256", user.salt).update(password).digest("hex");
-  if (hashedPassword !== user.passwordHash) {
+  const hashedBuf = Buffer.from(hashedPassword, "hex");
+  const targetBuf = Buffer.from(user.passwordHash, "hex");
+
+  if (hashedBuf.length !== targetBuf.length || !crypto.timingSafeEqual(hashedBuf, targetBuf)) {
     return res.status(400).json({ error: "Invalid email or password" });
   }
 
   const token = generateToken(user.id);
+  setAuthCookie(res, token);
   res.json({
     token,
     user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt },
@@ -297,7 +331,7 @@ app.post("/api/social-login", (req, res) => {
   const userName = name && name.trim() ? name.trim() : `${providerName} User`;
 
   const db = readDb();
-  let user = db.users.find((u: any) => u.email.toLowerCase() === userEmail);
+  let user = db.users.find((u: any) => u.email && u.email.trim().toLowerCase() === userEmail);
 
   if (!user) {
     const salt = crypto.randomBytes(16).toString("hex");
@@ -315,6 +349,7 @@ app.post("/api/social-login", (req, res) => {
   }
 
   const token = generateToken(user.id);
+  setAuthCookie(res, token);
   res.json({
     token,
     user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt },
@@ -324,16 +359,9 @@ app.post("/api/social-login", (req, res) => {
 // GET /api/me
 app.get("/api/me", authenticateToken, (req: any, res) => {
   const db = readDb();
-  let user = db.users.find((u: any) => u.id === req.userId);
+  const user = db.users.find((u: any) => u.id === req.userId);
   if (!user) {
-    user = {
-      id: req.userId,
-      name: "Authenticated User",
-      email: "user@workspace",
-      createdAt: new Date().toISOString(),
-    };
-    db.users.push(user);
-    writeDb(db);
+    return res.status(401).json({ error: "User not found" });
   }
   res.json({ id: user.id, name: user.name, email: user.email, createdAt: user.createdAt });
 });

@@ -97,8 +97,11 @@ export default function App() {
         headers: { Authorization: `Bearer ${token}` },
       })
         .then((res) => {
-          if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
             handleLogout();
+            return null;
+          }
+          if (!res.ok) {
             return null;
           }
           return res.json();
@@ -109,8 +112,8 @@ export default function App() {
             localStorage.setItem("meeting_auth_user", JSON.stringify(userData));
           }
         })
-        .catch(() => {
-          handleLogout();
+        .catch((err) => {
+          console.warn("Session validation check encountered network issue:", err);
         });
       fetchAllData();
     }
