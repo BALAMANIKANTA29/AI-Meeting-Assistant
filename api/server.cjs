@@ -297,9 +297,16 @@ app.post("/api/social-login", (req, res) => {
 });
 app.get("/api/me", authenticateToken, (req, res) => {
   const db = readDb();
-  const user = db.users.find((u) => u.id === req.userId);
+  let user = db.users.find((u) => u.id === req.userId);
   if (!user) {
-    return res.status(404).json({ error: "User not found" });
+    user = {
+      id: req.userId,
+      name: "Authenticated User",
+      email: "user@workspace",
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    db.users.push(user);
+    writeDb(db);
   }
   res.json({ id: user.id, name: user.name, email: user.email, createdAt: user.createdAt });
 });
