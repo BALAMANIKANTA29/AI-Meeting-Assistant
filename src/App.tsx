@@ -249,11 +249,9 @@ export default function App() {
               className="h-9 w-9 rounded-lg object-contain shadow-sm border border-zinc-100 bg-white"
             />
             <div>
-              <span className="text-sm font-semibold tracking-tight text-zinc-950 font-display block">
-                Meeting Assistant
-              </span>
-              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide flex items-center gap-0.5 mt-0.5">
-                <Sparkles className="h-3 w-3 animate-pulse" /> powered by AI
+              <span className="text-sm font-bold tracking-tight text-zinc-950 font-display block flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4 text-emerald-600 animate-pulse" />
+                AI Meeting Assistant
               </span>
             </div>
           </div>
