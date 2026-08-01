@@ -63,6 +63,10 @@ export default function App() {
       const meetingsRes = await fetch("/api/meetings", {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (meetingsRes.status === 401 || meetingsRes.status === 403) {
+        handleLogout();
+        return;
+      }
       const meetingsData = await meetingsRes.json();
       if (meetingsRes.ok) {
         setMeetings(meetingsData);
@@ -72,6 +76,10 @@ export default function App() {
       const statsRes = await fetch("/api/analytics", {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (statsRes.status === 401 || statsRes.status === 403) {
+        handleLogout();
+        return;
+      }
       const statsData = await statsRes.json();
       if (statsRes.ok) {
         setAnalytics(statsData);
@@ -85,6 +93,25 @@ export default function App() {
 
   useEffect(() => {
     if (token) {
+      fetch("/api/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => {
+          if (!res.ok) {
+            handleLogout();
+            return null;
+          }
+          return res.json();
+        })
+        .then((userData) => {
+          if (userData) {
+            setUser(userData);
+            localStorage.setItem("meeting_auth_user", JSON.stringify(userData));
+          }
+        })
+        .catch(() => {
+          handleLogout();
+        });
       fetchAllData();
     }
   }, [token]);

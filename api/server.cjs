@@ -108,17 +108,31 @@ function initDb() {
     );
   }
 }
+var inMemoryDb = null;
 function readDb() {
   initDb();
   try {
     const data = import_fs.default.readFileSync(DB_FILE, "utf8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (!parsed.users) parsed.users = [];
+    if (!parsed.meetings) parsed.meetings = [];
+    if (!parsed.actionItems) parsed.actionItems = [];
+    if (!parsed.emails) parsed.emails = [];
+    inMemoryDb = parsed;
+    return parsed;
   } catch (e) {
-    return { users: [], meetings: [], actionItems: [], emails: [] };
+    if (inMemoryDb) return inMemoryDb;
+    inMemoryDb = { users: [], meetings: [], actionItems: [], emails: [] };
+    return inMemoryDb;
   }
 }
 function writeDb(data) {
-  import_fs.default.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+  inMemoryDb = data;
+  try {
+    import_fs.default.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error("Failed to persist database to file:", e);
+  }
 }
 var JWT_SECRET = process.env.JWT_SECRET || "ai-meeting-assistant-secret-key-12345";
 function generateToken(userId) {
@@ -210,15 +224,6 @@ app.post("/api/register", (req, res) => {
   if (password.length < 6) {
     return res.status(400).json({ error: "Password must be at least 6 characters long." });
   }
-  if (!/[A-Z]/.test(password)) {
-    return res.status(400).json({ error: "Password must contain at least one uppercase letter (A-Z)." });
-  }
-  if (!/[a-z]/.test(password)) {
-    return res.status(400).json({ error: "Password must contain at least one lowercase letter (a-z)." });
-  }
-  if (!/[0-9]/.test(password)) {
-    return res.status(400).json({ error: "Password must contain at least one number (0-9)." });
-  }
   const cleanEmail = email.trim().toLowerCase();
   const cleanName = name.trim();
   const db = readDb();
@@ -256,6 +261,33 @@ app.post("/api/login", (req, res) => {
   const hashedPassword = import_crypto.default.createHmac("sha256", user.salt).update(password).digest("hex");
   if (hashedPassword !== user.passwordHash) {
     return res.status(400).json({ error: "Invalid email or password" });
+  }
+  const token = generateToken(user.id);
+  res.json({
+    token,
+    user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt }
+  });
+});
+app.post("/api/social-login", (req, res) => {
+  const { provider, email, name } = req.body;
+  const providerName = provider === "Microsoft" ? "Microsoft" : "Google";
+  const userEmail = email && email.trim() ? email.trim().toLowerCase() : `${providerName.toLowerCase()}.user@gmail.com`;
+  const userName = name && name.trim() ? name.trim() : `${providerName} User`;
+  const db = readDb();
+  let user = db.users.find((u) => u.email.toLowerCase() === userEmail);
+  if (!user) {
+    const salt = import_crypto.default.randomBytes(16).toString("hex");
+    const hashedPassword = import_crypto.default.createHmac("sha256", salt).update("SocialAuthPassword123").digest("hex");
+    user = {
+      id: import_crypto.default.randomUUID(),
+      name: userName,
+      email: userEmail,
+      passwordHash: hashedPassword,
+      salt,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    db.users.push(user);
+    writeDb(db);
   }
   const token = generateToken(user.id);
   res.json({
@@ -601,7 +633,7 @@ AI Meeting Assistant`
       summary,
       language: finalLanguage || "English"
     };
-    db.meetings.push(newMeeting);
+    db.meetings.unshift(newMeeting);
     actionItems.forEach((item) => {
       db.actionItems.push({
         id: import_crypto.default.randomUUID(),
@@ -625,9 +657,19 @@ AI Meeting Assistant`
     res.status(500).json({ error: error.message || "Failed to process meeting" });
   }
 });
+app.get("/api/public/latest-meeting", (req, res) => {
+  const db = readDb();
+  const validMeetings = db.meetings.filter((m) => !m.deleted);
+  if (validMeetings.length === 0) {
+    return res.json(null);
+  }
+  const latest = [...validMeetings].sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())[0];
+  const actionItems = db.actionItems.filter((a) => a.meetingId === latest.id);
+  res.json({ ...latest, actionItems });
+});
 app.get("/api/meetings", authenticateToken, (req, res) => {
   const db = readDb();
-  const userMeetings = db.meetings.filter((m) => m.userId === req.userId && !m.deleted);
+  const userMeetings = db.meetings.filter((m) => m.userId === req.userId && !m.deleted).sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
   res.json(userMeetings);
 });
 app.get("/api/meetings/trash", authenticateToken, (req, res) => {
@@ -834,6 +876,21 @@ app.post("/api/meetings/:id/restore", authenticateToken, (req, res) => {
   delete meeting.deletedAt;
   writeDb(db);
   res.json({ message: "Meeting restored successfully", meeting });
+});
+app.put("/api/meetings/:id", authenticateToken, (req, res) => {
+  const db = readDb();
+  const meeting = db.meetings.find((m) => m.id === req.params.id && m.userId === req.userId);
+  if (!meeting) {
+    return res.status(404).json({ error: "Meeting not found" });
+  }
+  const { title, summary, transcript, category } = req.body;
+  if (title !== void 0) meeting.title = title;
+  if (summary !== void 0) meeting.summary = summary;
+  if (transcript !== void 0) meeting.transcript = typeof transcript === "string" ? transcript : JSON.stringify(transcript);
+  if (category !== void 0) meeting.category = category;
+  meeting.date = (/* @__PURE__ */ new Date()).toISOString();
+  writeDb(db);
+  res.json(meeting);
 });
 app.delete("/api/meetings/:id/permanent", authenticateToken, (req, res) => {
   const db = readDb();

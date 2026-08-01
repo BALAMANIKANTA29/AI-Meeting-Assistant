@@ -88,18 +88,33 @@ function initDb() {
   }
 }
 
+let inMemoryDb: any = null;
+
 function readDb() {
   initDb();
   try {
     const data = fs.readFileSync(DB_FILE, "utf8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (!parsed.users) parsed.users = [];
+    if (!parsed.meetings) parsed.meetings = [];
+    if (!parsed.actionItems) parsed.actionItems = [];
+    if (!parsed.emails) parsed.emails = [];
+    inMemoryDb = parsed;
+    return parsed;
   } catch (e) {
-    return { users: [], meetings: [], actionItems: [], emails: [] };
+    if (inMemoryDb) return inMemoryDb;
+    inMemoryDb = { users: [], meetings: [], actionItems: [], emails: [] };
+    return inMemoryDb;
   }
 }
 
 function writeDb(data: any) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+  inMemoryDb = data;
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error("Failed to persist database to file:", e);
+  }
 }
 
 // Simple Native JWT System
@@ -217,15 +232,6 @@ app.post("/api/register", (req, res) => {
 
   if (password.length < 6) {
     return res.status(400).json({ error: "Password must be at least 6 characters long." });
-  }
-  if (!/[A-Z]/.test(password)) {
-    return res.status(400).json({ error: "Password must contain at least one uppercase letter (A-Z)." });
-  }
-  if (!/[a-z]/.test(password)) {
-    return res.status(400).json({ error: "Password must contain at least one lowercase letter (a-z)." });
-  }
-  if (!/[0-9]/.test(password)) {
-    return res.status(400).json({ error: "Password must contain at least one number (0-9)." });
   }
 
   const cleanEmail = email.trim().toLowerCase();

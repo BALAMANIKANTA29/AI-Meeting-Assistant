@@ -161,6 +161,14 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
     }
   };
 
+  // Switch mode handler & error reset
+  const switchMode = (newMode: AuthPageMode) => {
+    setMode(newMode);
+    setEmailError(false);
+    setPasswordError(false);
+    setNameError(false);
+  };
+
   // Submit Handler for Login & Registration
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -181,10 +189,7 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
       valid = false;
     }
 
-    if (mode === "login" && (!password || password.length < 6)) {
-      setPasswordError(true);
-      valid = false;
-    } else if (mode === "register" && (!allPasswordConstraintsMet || !password)) {
+    if (!password || password.length < 6) {
       setPasswordError(true);
       valid = false;
     }
@@ -530,7 +535,7 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
                   {/* Top Switch / Back button */}
                   <div className="flex items-center justify-between mb-4">
                     <button
-                      onClick={() => setMode("landing")}
+                      onClick={() => switchMode("landing")}
                       className="text-xs font-medium text-zinc-400 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <i className="fa-solid fa-arrow-left text-[10px]" />
@@ -543,7 +548,7 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
                   </div>
 
                   {/* Logo */}
-                  <div className="c-logo cursor-pointer" onClick={() => setMode("landing")}>
+                  <div className="c-logo cursor-pointer" onClick={() => switchMode("landing")}>
                     <div className="c-logo-icon bg-white overflow-hidden p-1">
                       <img src="/logo.png" alt="Zero Trust Logo" className="w-full h-full object-contain" />
                     </div>
@@ -745,14 +750,14 @@ export default function AuthView({ onSuccess }: AuthViewProps) {
                     {mode === "login" ? (
                       <>
                         New to MeetAI?{" "}
-                        <button type="button" onClick={() => setMode("register")}>
+                        <button type="button" onClick={() => switchMode("register")}>
                           Create an account
                         </button>
                       </>
                     ) : (
                       <>
                         Already have an account?{" "}
-                        <button type="button" onClick={() => setMode("login")}>
+                        <button type="button" onClick={() => switchMode("login")}>
                           Sign In
                         </button>
                       </>
