@@ -87,6 +87,22 @@
       "passwordHash": "397b9605f318bd6ff5521b2a92c44cbadec0ba6e2d3ef77c4d183a2580224554",
       "salt": "057649d3c069b3e3bed1ca83e809cc14",
       "createdAt": "2026-08-01T10:20:41.353Z"
+    },
+    {
+      "id": "52aad89c-e6be-43f5-ad0b-2302a47af30b",
+      "name": "KIET AID HOSTLERS",
+      "email": "kietaidcsd@gmail.com",
+      "passwordHash": "cd67d6e676a9e2c7c8440ae683a395f349d71f9f9f9c8c6ce9603cf829de5784",
+      "salt": "efa1f2550b2fa1968663b7f6266ece77",
+      "createdAt": "2026-08-04T02:07:13.395Z"
+    },
+    {
+      "id": "2b8aa2a7-4aa9-4415-b604-7f3cd63ce61b",
+      "name": "test",
+      "email": "test@gmail.com",
+      "passwordHash": "857bd18070fa1380988fa184ee30b11ae4a416f1f1148bfbf6c4e3760c999340b78af36a119b8da17df9fc7d61df2f1813fdc3970257e1b8e5d8e34e5b320826",
+      "salt": "741b3cfbc9604855cfd5af20af25a797",
+      "createdAt": "2026-08-17T08:27:02.943Z"
     }
   ],
   "meetings": [

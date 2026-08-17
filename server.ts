@@ -90,6 +90,9 @@ function initDb() {
 
 let inMemoryDb: any = null;
 
+// WARNING: This JSON-file "database" has no locking, causing lost updates under concurrent requests.
+// On Vercel, DB_FILE lives in /tmp, which is ephemeral per serverless instance and wiped on cold start.
+// This is not suitable for real multi-instance production use and should be replaced with a real database (Postgres/SQLite/etc.) before scaling.
 function readDb() {
   initDb();
   try {
@@ -129,8 +132,19 @@ function writeDb(data: any) {
   }
 }
 
+// In-process write queue to serialize DB reads/writes
+let dbLock = Promise.resolve();
+async function runWithDbLock<T>(fn: () => T | Promise<T>): Promise<T> {
+  const result = dbLock.then(() => fn());
+  dbLock = result.catch(() => {}) as Promise<any>;
+  return result;
+}
+
 // Simple Native JWT System
-const JWT_SECRET = process.env.JWT_SECRET || "ai-meeting-assistant-secret-key-12345";
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET environment variable is required to start the server.");
+}
 
 function generateToken(userId: string): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
@@ -258,8 +272,8 @@ app.post("/api/register", (req, res) => {
     return res.status(400).json({ error: "Name, email, and password are required" });
   }
 
-  if (password.length < 6) {
-    return res.status(400).json({ error: "Password must be at least 6 characters long." });
+  if (password.length < 6 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
+    return res.status(400).json({ error: "Password must be at least 6 characters long and contain at least one uppercase letter, one lowercase letter, and one number." });
   }
 
   const cleanEmail = email.trim().toLowerCase();
@@ -271,7 +285,7 @@ app.post("/api/register", (req, res) => {
   }
 
   const salt = crypto.randomBytes(16).toString("hex");
-  const hashedPassword = crypto.createHmac("sha256", salt).update(password).digest("hex");
+  const hashedPassword = crypto.scryptSync(password, salt, 64).toString("hex");
 
   const newUser = {
     id: crypto.randomUUID(),
@@ -307,45 +321,11 @@ app.post("/api/login", (req, res) => {
     return res.status(400).json({ error: "Invalid email or password" });
   }
 
-  const hashedPassword = crypto.createHmac("sha256", user.salt).update(password).digest("hex");
-  const hashedBuf = Buffer.from(hashedPassword, "hex");
+  const hashedBuf = crypto.scryptSync(password, user.salt, 64);
   const targetBuf = Buffer.from(user.passwordHash, "hex");
 
   if (hashedBuf.length !== targetBuf.length || !crypto.timingSafeEqual(hashedBuf, targetBuf)) {
     return res.status(400).json({ error: "Invalid email or password" });
-  }
-
-  const token = generateToken(user.id);
-  setAuthCookie(res, token);
-  res.json({
-    token,
-    user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt },
-  });
-});
-
-// POST /api/social-login
-app.post("/api/social-login", (req, res) => {
-  const { provider, email, name } = req.body;
-  const providerName = provider === "Microsoft" ? "Microsoft" : "Google";
-  const userEmail = email && email.trim() ? email.trim().toLowerCase() : `${providerName.toLowerCase()}.user@gmail.com`;
-  const userName = name && name.trim() ? name.trim() : `${providerName} User`;
-
-  const db = readDb();
-  let user = db.users.find((u: any) => u.email && u.email.trim().toLowerCase() === userEmail);
-
-  if (!user) {
-    const salt = crypto.randomBytes(16).toString("hex");
-    const hashedPassword = crypto.createHmac("sha256", salt).update("SocialAuthPassword123").digest("hex");
-    user = {
-      id: crypto.randomUUID(),
-      name: userName,
-      email: userEmail,
-      passwordHash: hashedPassword,
-      salt,
-      createdAt: new Date().toISOString(),
-    };
-    db.users.push(user);
-    writeDb(db);
   }
 
   const token = generateToken(user.id);
@@ -372,7 +352,8 @@ app.post("/api/upload", authenticateToken, async (req: any, res) => {
   
   const finalTitle = title || "Untitled Meeting";
   const finalCategory = category || "General";
-  const finalDuration = duration ? parseInt(duration, 10) : 120;
+  const parsedDuration = duration ? parseInt(duration, 10) : 120;
+  const finalDuration = Number.isFinite(parsedDuration) ? parsedDuration : 120;
   const finalLanguage = language || "English";
 
   try {
@@ -713,30 +694,31 @@ Respond ONLY with raw valid JSON. Do not include markdown code block formatting 
       language: finalLanguage || "English",
     };
 
-    // Store at the top (newest / most recently updated)
-    db.meetings.unshift(newMeeting);
+    // Wait for DB lock to avoid race conditions with other requests
+    await runWithDbLock(() => {
+      const currentDb = readDb();
+      currentDb.meetings.unshift(newMeeting);
 
-    // Save action items
-    actionItems.forEach((item: any) => {
-      db.actionItems.push({
+      actionItems.forEach((item: any) => {
+        currentDb.actionItems.push({
+          id: crypto.randomUUID(),
+          meetingId: meetingId,
+          task: item.task,
+          assignedTo: item.assignedTo,
+          deadline: item.deadline || "TBD",
+          status: "pending",
+        });
+      });
+
+      currentDb.emails.push({
         id: crypto.randomUUID(),
         meetingId: meetingId,
-        task: item.task,
-        assignedTo: item.assignedTo,
-        deadline: item.deadline || "TBD",
-        status: "pending",
+        subject: emailObj.subject || `Meeting Follow-up: ${finalTitle}`,
+        body: emailObj.body || `Follow up details for ${finalTitle}`,
       });
-    });
 
-    // Save Email template
-    db.emails.push({
-      id: crypto.randomUUID(),
-      meetingId: meetingId,
-      subject: emailObj.subject || `Meeting Follow-up: ${finalTitle}`,
-      body: emailObj.body || `Follow up details for ${finalTitle}`,
+      writeDb(currentDb);
     });
-
-    writeDb(db);
 
     res.status(201).json(newMeeting);
   } catch (error: any) {
@@ -860,34 +842,41 @@ Respond ONLY with raw valid JSON. Do not include markdown code block formatting 
         if (transRes.text) {
           const result = JSON.parse(transRes.text.trim());
           
-          if (result.transcript && Array.isArray(result.transcript)) {
-            meeting.transcript = JSON.stringify(result.transcript);
-          }
-          if (result.summary) {
-            meeting.summary = result.summary;
-          }
-          
-          if (result.actionItems && Array.isArray(result.actionItems)) {
-            result.actionItems.forEach((updatedItem: any) => {
-              if (updatedItem && updatedItem.id) {
-                const itemInDb = db.actionItems.find((a: any) => a.id === updatedItem.id);
-                if (itemInDb) {
-                  itemInDb.task = updatedItem.task;
-                }
+          await runWithDbLock(() => {
+            const currentDb = readDb();
+            const meetingInDb = currentDb.meetings.find((m: any) => m.id === req.params.id && m.userId === req.userId);
+            
+            if (meetingInDb) {
+              if (result.transcript && Array.isArray(result.transcript)) {
+                meetingInDb.transcript = JSON.stringify(result.transcript);
               }
-            });
-          }
-
-          if (email && result.email && result.email.subject && result.email.body) {
-            const emailInDb = db.emails.find((e: any) => e.meetingId === req.params.id);
-            if (emailInDb) {
-              emailInDb.subject = result.email.subject;
-              emailInDb.body = result.email.body;
+              if (result.summary) {
+                meetingInDb.summary = result.summary;
+              }
+              meetingInDb.language = language;
             }
-          }
+            
+            if (result.actionItems && Array.isArray(result.actionItems)) {
+              result.actionItems.forEach((updatedItem: any) => {
+                if (updatedItem && updatedItem.id) {
+                  const itemInDb = currentDb.actionItems.find((a: any) => a.id === updatedItem.id);
+                  if (itemInDb) {
+                    itemInDb.task = updatedItem.task;
+                  }
+                }
+              });
+            }
 
-          meeting.language = language;
-          writeDb(db);
+            if (email && result.email && result.email.subject && result.email.body) {
+              const emailInDb = currentDb.emails.find((e: any) => e.meetingId === req.params.id);
+              if (emailInDb) {
+                emailInDb.subject = result.email.subject;
+                emailInDb.body = result.email.body;
+              }
+            }
+
+            writeDb(currentDb);
+          });
           translatedSuccess = true;
         }
       } catch (transErr: any) {
@@ -943,23 +932,33 @@ Respond ONLY with raw valid JSON. Do not include markdown code block formatting 
       }
 
       // Save fallback results to db
-      actionItems.forEach((updatedItem: any) => {
-        const itemInDb = db.actionItems.find((a: any) => a.id === updatedItem.id);
-        if (itemInDb) {
-          itemInDb.task = updatedItem.task;
+      await runWithDbLock(() => {
+        const currentDb = readDb();
+        const meetingInDb = currentDb.meetings.find((m: any) => m.id === req.params.id && m.userId === req.userId);
+        
+        if (meetingInDb) {
+          meetingInDb.transcript = meeting.transcript;
+          meetingInDb.summary = meeting.summary;
+          meetingInDb.language = language;
         }
+
+        actionItems.forEach((updatedItem: any) => {
+          const itemInDb = currentDb.actionItems.find((a: any) => a.id === updatedItem.id);
+          if (itemInDb) {
+            itemInDb.task = updatedItem.task;
+          }
+        });
+
+        if (email) {
+          const emailInDb = currentDb.emails.find((e: any) => e.meetingId === req.params.id);
+          if (emailInDb) {
+            emailInDb.subject = email.subject;
+            emailInDb.body = email.body;
+          }
+        }
+
+        writeDb(currentDb);
       });
-
-      if (email) {
-        const emailInDb = db.emails.find((e: any) => e.meetingId === req.params.id);
-        if (emailInDb) {
-          emailInDb.subject = email.subject;
-          emailInDb.body = email.body;
-        }
-      }
-
-      meeting.language = language;
-      writeDb(db);
     }
 
     // Return the updated data
@@ -1229,7 +1228,7 @@ app.get("/api/search", authenticateToken, async (req: any, res) => {
     }
 
     // Traditional Fallback keyword matcher
-    const queryLower = q.toLowerCase();
+    const queryLower = String(Array.isArray(q) ? q[0] : q).toLowerCase();
     const matches = userMeetings
       .map((m: any) => {
         let score = 0;

@@ -23,7 +23,7 @@ import SearchView from "./components/SearchView";
 import RecycleBinView from "./components/RecycleBinView";
 
 export default function App() {
-  const [token, setToken] = useState<string | null>(localStorage.getItem("meeting_auth_token"));
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem("meeting_auth_user"));
   const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(
     JSON.parse(localStorage.getItem("meeting_auth_user") || "null")
   );
@@ -37,18 +37,16 @@ export default function App() {
 
   // Authenticate & Load
   const handleAuthSuccess = (newToken: string, newUser: { id: string; name: string; email: string }) => {
-    localStorage.setItem("meeting_auth_token", newToken);
     localStorage.setItem("meeting_auth_user", JSON.stringify(newUser));
-    setToken(newToken);
+    setIsAuthenticated(true);
     setUser(newUser);
     setActiveTab("dashboard");
     setSelectedMeetingId(null);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("meeting_auth_token");
     localStorage.removeItem("meeting_auth_user");
-    setToken(null);
+    setIsAuthenticated(false);
     setUser(null);
     setMeetings([]);
     setAnalytics(null);
@@ -56,12 +54,12 @@ export default function App() {
 
   // Fetch archives and statistics
   const fetchAllData = async () => {
-    if (!token) return;
+    if (!isAuthenticated) return;
     setLoadingData(true);
     try {
       // Fetch meetings list
       const meetingsRes = await fetch("/api/meetings", {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       if (meetingsRes.status === 401 || meetingsRes.status === 403) {
         handleLogout();
@@ -74,7 +72,7 @@ export default function App() {
 
       // Fetch analytics stats
       const statsRes = await fetch("/api/analytics", {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       if (statsRes.status === 401 || statsRes.status === 403) {
         handleLogout();
@@ -92,9 +90,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (token) {
+    if (isAuthenticated) {
       fetch("/api/me", {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       })
         .then((res) => {
           if (res.status === 401 || res.status === 403) {
@@ -117,7 +115,7 @@ export default function App() {
         });
       fetchAllData();
     }
-  }, [token]);
+  }, [isAuthenticated]);
 
   // When a new meeting is recorded or simulation finishes
   const handleMeetingProcessed = (newMeeting: any) => {
@@ -128,11 +126,11 @@ export default function App() {
   };
 
   const handleDeleteMeeting = async (meetingId: string) => {
-    if (!token) return;
+    if (!isAuthenticated) return;
     try {
       const res = await fetch(`/api/meetings/${meetingId}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       if (res.ok) {
         setMeetings((prev) => prev.filter((m) => m.id !== meetingId));
@@ -147,12 +145,12 @@ export default function App() {
   };
 
   const handleBulkDeleteMeetings = async (meetingIds: string[]) => {
-    if (!token) return;
+    if (!isAuthenticated) return;
     try {
       const res = await fetch("/api/meetings/bulk-delete", {
         method: "POST",
+        credentials: "include",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ ids: meetingIds }),
@@ -198,7 +196,7 @@ export default function App() {
       case "upload":
         return (
           <UploadView
-            token={token!}
+            token=""
             onSuccess={handleMeetingProcessed}
             onNavigate={(tab) => {
               setActiveTab(tab as any);
@@ -218,14 +216,14 @@ export default function App() {
       case "search":
         return (
           <SearchView
-            token={token!}
+            token=""
             onSelectMeeting={(id) => setSelectedMeetingId(id)}
           />
         );
       case "trash":
         return (
           <RecycleBinView
-            token={token!}
+            token=""
             onRefreshMeetings={fetchAllData}
           />
         );
@@ -235,7 +233,7 @@ export default function App() {
   };
 
   // If unauthorized, render Auth Form View
-  if (!token || !user) {
+  if (!isAuthenticated || !user) {
     return <AuthView onSuccess={handleAuthSuccess} />;
   }
 
@@ -384,7 +382,7 @@ export default function App() {
               >
                 <MeetingDetailView
                   meetingId={selectedMeetingId}
-                  token={token}
+                  token=""
                   onBack={() => setSelectedMeetingId(null)}
                   onUpdateStats={fetchAllData}
                 />

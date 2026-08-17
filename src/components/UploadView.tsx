@@ -365,9 +365,9 @@ export default function UploadView({ token, onSuccess, onNavigate }: UploadViewP
       // Fetch POST
       const res = await fetch("/api/upload", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify(payload),
       });

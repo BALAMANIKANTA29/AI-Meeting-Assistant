@@ -57,7 +57,7 @@ export default function MeetingDetailView({
     setLoading(true);
     try {
       const res = await fetch(`/api/meetings/${meetingId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) {
@@ -85,9 +85,9 @@ export default function MeetingDetailView({
     try {
       const res = await fetch(`/api/action-items/${itemId}/toggle`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
       });
       
@@ -135,9 +135,9 @@ export default function MeetingDetailView({
     try {
       const res = await fetch(`/api/meetings/${meetingId}/translate`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ language: lang }),
       });

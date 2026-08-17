@@ -19,8 +19,8 @@ export default function RecycleBinView({ token, onRefreshMeetings }: RecycleBinV
     try {
       const res = await fetch("/api/meetings/bulk-restore", {
         method: "POST",
+        credentials: "include",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ ids: selectedIds }),
@@ -43,8 +43,8 @@ export default function RecycleBinView({ token, onRefreshMeetings }: RecycleBinV
     try {
       const res = await fetch("/api/meetings/bulk-permanent-delete", {
         method: "POST",
+        credentials: "include",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ ids: selectedIds }),
@@ -63,7 +63,7 @@ export default function RecycleBinView({ token, onRefreshMeetings }: RecycleBinV
     setLoading(true);
     try {
       const res = await fetch("/api/meetings/trash", {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load trashed meetings");
@@ -83,7 +83,7 @@ export default function RecycleBinView({ token, onRefreshMeetings }: RecycleBinV
     try {
       const res = await fetch(`/api/meetings/${id}/restore`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to restore meeting");
@@ -101,7 +101,7 @@ export default function RecycleBinView({ token, onRefreshMeetings }: RecycleBinV
     try {
       const res = await fetch(`/api/meetings/${id}/permanent`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to delete meeting permanently");
@@ -119,7 +119,7 @@ export default function RecycleBinView({ token, onRefreshMeetings }: RecycleBinV
     try {
       const res = await fetch("/api/meetings/empty-trash", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to empty recycle bin");
